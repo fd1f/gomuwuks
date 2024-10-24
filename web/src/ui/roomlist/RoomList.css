@@ -62,11 +62,11 @@ div.room-entry {
 			font-weight: bold;
 			overflow: hidden;
 			white-space: nowrap;
-			text-overflow: ellipsis;
+			text-overflow: ",,,";
 		}
 
 		> div.message-preview {
-			text-overflow: ellipsis;
+			text-overflow: ",,,";
 			white-space: nowrap;
 			overflow: hidden;
 

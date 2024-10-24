@@ -53,7 +53,7 @@ div.timeline-event {
 		> span.event-sender {
 			font-weight: bold;
 			overflow: hidden;
-			text-overflow: ellipsis;
+			text-overflow: ",,,";
 		}
 
 		> span.event-time, > span.event-edited {
@@ -153,7 +153,7 @@ div.event-content > div.event-reactions {
 		padding: 0 .5rem;
 
 		white-space: nowrap;
-		text-overflow: ellipsis;
+		text-overflow: ",,,";
 		overflow: hidden;
 		max-width: 20rem;
 
