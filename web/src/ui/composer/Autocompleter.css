@@ -15,7 +15,10 @@ div.autocompletions {
 	> .autocompletion-item {
 		padding: .25rem;
 		border-radius: .25rem;
-		cursor: pointer;
+		display: flex;
+		align-items: center;
+		gap: .25rem;
+		/*cursor: pointer;*/
 
 		&.selected, &:hover {
 			background-color: #f0f0f0;

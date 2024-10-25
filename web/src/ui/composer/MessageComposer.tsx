@@ -15,24 +15,30 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import React, { use, useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from "react"
 import { ScaleLoader } from "react-spinners"
-import { RoomStateStore, useRoomEvent } from "@/api/statestore"
-import type { EventID, MediaMessageEventContent, Mentions, RelatesTo, RoomID } from "@/api/types"
+import { useRoomEvent } from "@/api/statestore"
+import type {
+	EventID,
+	MediaMessageEventContent,
+	MemDBEvent,
+	Mentions,
+	MessageEventContent,
+	RelatesTo,
+	RoomID,
+} from "@/api/types"
 import useEvent from "@/util/useEvent.ts"
 import { ClientContext } from "../ClientContext.ts"
+import EmojiPicker from "../emojipicker/EmojiPicker.tsx"
+import { ModalContext } from "../modal/Modal.tsx"
+import { useRoomContext } from "../roomcontext.ts"
 import { ReplyBody } from "../timeline/ReplyBody.tsx"
 import { useMediaContent } from "../timeline/content/useMediaContent.tsx"
 import type { AutocompleteQuery } from "./Autocompleter.tsx"
 import { charToAutocompleteType, emojiQueryRegex, getAutocompleter } from "./getAutocompleter.ts"
 import AttachIcon from "@/icons/attach.svg?react"
 import CloseIcon from "@/icons/close.svg?react"
+import EmojiIcon from "@/icons/emoji-categories/smileys-emotion.svg?react"
 import SendIcon from "@/icons/send.svg?react"
 import "./MessageComposer.css"
-
-interface MessageComposerProps {
-	room: RoomStateStore
-	scrollToBottomRef: React.RefObject<() => void>
-	setReplyToRef: React.RefObject<(evt: EventID | null) => void>
-}
 
 export interface ComposerState {
 	text: string
@@ -66,32 +72,65 @@ const draftStore = {
 
 type CaretEvent<T> = React.MouseEvent<T> | React.KeyboardEvent<T> | React.ChangeEvent<T>
 
-const MessageComposer = ({ room, scrollToBottomRef, setReplyToRef }: MessageComposerProps) => {
+const MessageComposer = () => {
+	const roomCtx = useRoomContext()
+	const room = roomCtx.store
 	const client = use(ClientContext)!
+	const openModal = use(ModalContext)
 	const [autocomplete, setAutocomplete] = useState<AutocompleteQuery | null>(null)
 	const [state, setState] = useReducer(composerReducer, uninitedComposer)
+	const [editing, rawSetEditing] = useState<MemDBEvent | null>(null)
 	const [loadingMedia, setLoadingMedia] = useState(false)
 	const fileInput = useRef<HTMLInputElement>(null)
 	const textInput = useRef<HTMLTextAreaElement>(null)
+	const composerRef = useRef<HTMLDivElement>(null)
 	const textRows = useRef(1)
 	const typingSentAt = useRef(0)
 	const replyToEvt = useRoomEvent(room, state.replyTo)
-	setReplyToRef.current = useCallback((evt: EventID | null) => {
+	roomCtx.setReplyTo = useCallback((evt: EventID | null) => {
 		setState({ replyTo: evt })
+		textInput.current?.focus()
 	}, [])
+	roomCtx.setEditing = useCallback((evt: MemDBEvent | null) => {
+		if (evt === null) {
+			rawSetEditing(null)
+			setState(draftStore.get(room.roomID) ?? emptyComposer)
+			return
+		}
+		const evtContent = evt.content as MessageEventContent
+		const mediaMsgTypes = ["m.image", "m.audio", "m.video", "m.file"]
+		const isMedia = mediaMsgTypes.includes(evtContent.msgtype)
+			&& Boolean(evt.content?.url || evt.content?.file?.url)
+		rawSetEditing(evt)
+		setState({
+			media: isMedia ? evtContent as MediaMessageEventContent : null,
+			text: (!evt.content.filename || evt.content.filename !== evt.content.body) ? (evtContent.body ?? "") : "",
+		})
+		textInput.current?.focus()
+	}, [room.roomID])
 	const sendMessage = useEvent((evt: React.FormEvent) => {
 		evt.preventDefault()
 		if (state.text === "" && !state.media) {
 			return
 		}
-		setState(emptyComposer)
+		if (editing) {
+			setState(draftStore.get(room.roomID) ?? emptyComposer)
+		} else {
+			setState(emptyComposer)
+		}
+		rawSetEditing(null)
 		setAutocomplete(null)
 		const mentions: Mentions = {
 			user_ids: [],
 			room: false,
 		}
 		let relates_to: RelatesTo | undefined = undefined
-		if (replyToEvt) {
+		if (editing) {
+			relates_to = {
+				rel_type: "m.replace",
+				event_id: editing.event_id,
+			}
+		} else if (replyToEvt) {
 			mentions.user_ids.push(replyToEvt.sender)
 			relates_to = {
 				"m.in_reply_to": {
@@ -148,8 +187,7 @@ const MessageComposer = ({ room, scrollToBottomRef, setReplyToRef }: MessageComp
 	const onComposerKeyDown = useEvent((evt: React.KeyboardEvent) => {
 		if (evt.key === "Enter" && !evt.shiftKey) {
 			sendMessage(evt)
-		}
-		if (autocomplete && !evt.ctrlKey && !evt.altKey) {
+		} else if (autocomplete && !evt.ctrlKey && !evt.altKey) {
 			if (!evt.shiftKey && (evt.key === "Tab" || evt.key === "ArrowDown")) {
 				setAutocomplete({ ...autocomplete, selected: (autocomplete.selected ?? -1) + 1 })
 				evt.preventDefault()
@@ -157,6 +195,30 @@ const MessageComposer = ({ room, scrollToBottomRef, setReplyToRef }: MessageComp
 				setAutocomplete({ ...autocomplete, selected: (autocomplete.selected ?? 0) - 1 })
 				evt.preventDefault()
 			}
+		} else if (!autocomplete && textInput.current) {
+			const inp = textInput.current
+			if (evt.key === "ArrowUp" && inp.selectionStart === 0 && inp.selectionEnd === 0) {
+				const currentlyEditing = editing
+					? roomCtx.ownMessages.indexOf(editing.rowid)
+					: roomCtx.ownMessages.length
+				const prevEventToEditID = roomCtx.ownMessages[currentlyEditing - 1]
+				const prevEventToEdit = prevEventToEditID ? room.eventsByRowID.get(prevEventToEditID) : undefined
+				if (prevEventToEdit) {
+					roomCtx.setEditing(prevEventToEdit)
+					evt.preventDefault()
+				}
+			} else if (editing && evt.key === "ArrowDown" && inp.selectionStart === state.text.length) {
+				const currentlyEditingIdx = roomCtx.ownMessages.indexOf(editing.rowid)
+				const nextEventToEdit = currentlyEditingIdx
+					? room.eventsByRowID.get(roomCtx.ownMessages[currentlyEditingIdx + 1]) : undefined
+				roomCtx.setEditing(nextEventToEdit ?? null)
+				// This timeout is very hacky and probably doesn't work in every case
+				setTimeout(() => inp.setSelectionRange(0, 0), 0)
+				evt.preventDefault()
+			}
+		}
+		if (editing && evt.key === "Escape") {
+			roomCtx.setEditing(null)
 		}
 	})
 	const onChange = useEvent((evt: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -227,11 +289,12 @@ const MessageComposer = ({ room, scrollToBottomRef, setReplyToRef }: MessageComp
 		textInput.current.rows = newTextRows
 		textRows.current = newTextRows
 		// This has to be called unconditionally, because setting rows = 1 messes up the scroll state otherwise
-		scrollToBottomRef.current?.()
-	}, [state, scrollToBottomRef])
+		roomCtx.scrollToBottom()
+	}, [state, roomCtx])
 	// Saving to localStorage could be done in the reducer, but that's not very proper, so do it in an effect.
 	useEffect(() => {
-		if (state.uninited) {
+		roomCtx.isEditing.emit(editing !== null)
+		if (state.uninited || editing) {
 			return
 		}
 		if (!state.text && !state.media && !state.replyTo) {
@@ -239,15 +302,34 @@ const MessageComposer = ({ room, scrollToBottomRef, setReplyToRef }: MessageComp
 		} else {
 			draftStore.set(room.roomID, state)
 		}
-	}, [room, state])
+	}, [roomCtx, room, state, editing])
 	const openFilePicker = useCallback(() => fileInput.current!.click(), [])
 	const clearMedia = useCallback(() => setState({ media: null }), [])
 	const closeReply = useCallback((evt: React.MouseEvent) => {
 		evt.stopPropagation()
 		setState({ replyTo: null })
 	}, [])
+	const stopEditing = useCallback((evt: React.MouseEvent) => {
+		evt.stopPropagation()
+		roomCtx.setEditing(null)
+	}, [roomCtx])
+	const openEmojiPicker = useEvent(() => {
+		openModal({
+			content: <EmojiPicker
+				style={{ bottom: (composerRef.current?.clientHeight ?? 32) + 2, right: "1rem" }}
+				onSelect={emoji => {
+					setState({
+						text: state.text.slice(0, textInput.current?.selectionStart ?? 0)
+							+ emoji.u
+							+ state.text.slice(textInput.current?.selectionEnd ?? 0),
+					})
+				}}
+			/>,
+			onClose: () => textInput.current?.focus(),
+		})
+	})
 	const Autocompleter = getAutocompleter(autocomplete)
-	return <div className="message-composer">
+	return <div className="message-composer" ref={composerRef}>
 		{Autocompleter && autocomplete && <div className="autocompletions-wrapper"><Autocompleter
 			params={autocomplete}
 			room={room}
@@ -260,6 +342,13 @@ const MessageComposer = ({ room, scrollToBottomRef, setReplyToRef }: MessageComp
 			event={replyToEvt}
 			onClose={closeReply}
 			isThread={replyToEvt.content?.["m.relates_to"]?.rel_type === "m.thread"}
+		/>}
+		{editing && <ReplyBody
+			room={room}
+			event={editing}
+			isEditing={true}
+			isThread={false}
+			onClose={stopEditing}
 		/>}
 		{loadingMedia && <div className="composer-media"><ScaleLoader/></div>}
 		{state.media && <ComposerMedia content={state.media} clearMedia={clearMedia}/>}
@@ -276,6 +365,7 @@ const MessageComposer = ({ room, scrollToBottomRef, setReplyToRef }: MessageComp
 				placeholder="Send a message"
 				id="message-composer"
 			/>
+			<button onClick={openEmojiPicker}><EmojiIcon/></button>
 			<button
 				onClick={openFilePicker}
 				disabled={!!state.media || loadingMedia}

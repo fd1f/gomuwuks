@@ -16,7 +16,7 @@
 import { CachedEventDispatcher } from "../util/eventdispatcher.ts"
 import RPCClient, { SendMessageParams } from "./rpc.ts"
 import { RoomStateStore, StateStore } from "./statestore"
-import type { ClientState, EventID, RPCEvent, RoomID, UserID } from "./types"
+import type { ClientState, EventID, EventType, RPCEvent, RoomID, UserID } from "./types"
 
 export default class Client {
 	readonly state = new CachedEventDispatcher<ClientState>()
@@ -56,6 +56,36 @@ export default class Client {
 			evt => room.applyEvent(evt),
 			err => console.error(`Failed to fetch event ${eventID}`, err),
 		)
+	}
+
+	async pinMessage(room: RoomStateStore, evtID: EventID, wantPinned: boolean) {
+		const pinnedEvents = room.getPinnedEvents()
+		const currentlyPinned = pinnedEvents.includes(evtID)
+		if (currentlyPinned === wantPinned) {
+			return
+		}
+		if (wantPinned) {
+			pinnedEvents.push(evtID)
+		} else {
+			const idx = pinnedEvents.indexOf(evtID)
+			if (idx !== -1) {
+				pinnedEvents.splice(idx, 1)
+			}
+		}
+		await this.rpc.setState(room.roomID, "m.room.pinned_events", "", { pinned: pinnedEvents })
+	}
+
+	async sendEvent(roomID: RoomID, type: EventType, content: Record<string, unknown>): Promise<void> {
+		const room = this.store.rooms.get(roomID)
+		if (!room) {
+			throw new Error("Room not found")
+		}
+		const dbEvent = await this.rpc.sendEvent(roomID, type, content)
+		if (!room.eventsByRowID.has(dbEvent.rowid)) {
+			room.pendingEvents.push(dbEvent.rowid)
+			room.applyEvent(dbEvent, true)
+			room.notifyTimelineSubscribers()
+		}
 	}
 
 	async sendMessage(params: SendMessageParams): Promise<void> {

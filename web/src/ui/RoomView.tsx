@@ -14,12 +14,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import { use, useRef } from "react"
-import { getMediaURL } from "@/api/media.ts"
+import { getAvatarURL } from "@/api/media.ts"
 import { RoomStateStore } from "@/api/statestore"
-import { EventID } from "@/api/types"
 import { useNonNullEventAsState } from "@/util/eventdispatcher.ts"
-import { LightboxContext } from "./Lightbox.tsx"
 import MessageComposer from "./composer/MessageComposer.tsx"
+import { LightboxContext } from "./modal/Lightbox.tsx"
+import { RoomContext, RoomContextData } from "./roomcontext.ts"
 import TimelineView from "./timeline/TimelineView.tsx"
 import BackIcon from "@/icons/back.svg?react"
 import "./RoomView.css"
@@ -31,12 +31,14 @@ interface RoomViewProps {
 
 const RoomHeader = ({ room, clearActiveRoom }: RoomViewProps) => {
 	const roomMeta = useNonNullEventAsState(room.meta)
+	const avatarSourceID = roomMeta.lazy_load_summary?.heroes?.length === 1
+		? roomMeta.lazy_load_summary.heroes[0] : room.roomID
 	return <div className="room-header">
 		<button className="back" onClick={clearActiveRoom}><BackIcon/></button>
 		<img
 			className="avatar"
 			loading="lazy"
-			src={getMediaURL(roomMeta.avatar)}
+			src={getAvatarURL(avatarSourceID, { avatar_url: roomMeta.avatar, displayname: roomMeta.name })}
 			onClick={use(LightboxContext)!}
 			alt=""
 		/>
@@ -53,12 +55,16 @@ const onKeyDownRoomView = (evt: React.KeyboardEvent) => {
 }
 
 const RoomView = ({ room, clearActiveRoom }: RoomViewProps) => {
-	const scrollToBottomRef = useRef<() => void>(() => {})
-	const setReplyToRef = useRef<(evt: EventID | null) => void>(() => {})
+	const roomContextDataRef = useRef<RoomContextData | undefined>(undefined)
+	if (roomContextDataRef.current === undefined) {
+		roomContextDataRef.current = new RoomContextData(room)
+	}
 	return <div className="room-view" onKeyDown={onKeyDownRoomView} tabIndex={-1}>
-		<RoomHeader room={room} clearActiveRoom={clearActiveRoom}/>
-		<TimelineView room={room} scrollToBottomRef={scrollToBottomRef} setReplyToRef={setReplyToRef}/>
-		<MessageComposer room={room} scrollToBottomRef={scrollToBottomRef} setReplyToRef={setReplyToRef}/>
+		<RoomContext value={roomContextDataRef.current}>
+			<RoomHeader room={room} clearActiveRoom={clearActiveRoom}/>
+			<TimelineView/>
+			<MessageComposer/>
+		</RoomContext>
 	</div>
 }
 

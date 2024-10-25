@@ -77,8 +77,14 @@ func (h *HiClient) SendMessage(
 		if relatesTo.Type == event.RelReplace {
 			contentCopy := content
 			content = event.MessageEventContent{
+				Body:       "",
+				MsgType:    contentCopy.MsgType,
+				URL:        contentCopy.URL,
 				NewContent: &contentCopy,
 				RelatesTo:  relatesTo,
+			}
+			if contentCopy.File != nil {
+				content.URL = contentCopy.File.URL
 			}
 		} else {
 			content.RelatesTo = relatesTo
@@ -108,6 +114,26 @@ func (h *HiClient) MarkRead(ctx context.Context, roomID id.RoomID, eventID id.Ev
 func (h *HiClient) SetTyping(ctx context.Context, roomID id.RoomID, timeout time.Duration) error {
 	_, err := h.Client.UserTyping(ctx, roomID, timeout > 0, timeout)
 	return err
+}
+
+func (h *HiClient) SetState(
+	ctx context.Context,
+	roomID id.RoomID,
+	evtType event.Type,
+	stateKey string,
+	content any,
+) (id.EventID, error) {
+	room, err := h.DB.Room.Get(ctx, roomID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get room metadata: %w", err)
+	} else if room == nil {
+		return "", fmt.Errorf("unknown room")
+	}
+	resp, err := h.Client.SendStateEvent(ctx, room.ID, evtType, stateKey, content)
+	if err != nil {
+		return "", err
+	}
+	return resp.EventID, nil
 }
 
 func (h *HiClient) Send(

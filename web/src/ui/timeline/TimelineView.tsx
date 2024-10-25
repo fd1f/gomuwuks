@@ -13,33 +13,29 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
-import React, { use, useCallback, useEffect, useLayoutEffect, useRef } from "react"
-import { RoomStateStore, useRoomTimeline } from "@/api/statestore"
-import { EventID, MemDBEvent } from "@/api/types"
+import { use, useCallback, useEffect, useLayoutEffect, useRef } from "react"
+import { useRoomTimeline } from "@/api/statestore"
+import { MemDBEvent } from "@/api/types"
 import useFocus from "@/util/focus.ts"
 import { ClientContext } from "../ClientContext.ts"
+import { useRoomContext } from "../roomcontext.ts"
 import TimelineEvent from "./TimelineEvent.tsx"
 import "./TimelineView.css"
 
-interface TimelineViewProps {
-	room: RoomStateStore
-	scrollToBottomRef: React.RefObject<() => void>
-	setReplyToRef: React.RefObject<(evt: EventID | null) => void>
-}
-
-const TimelineView = ({ room, scrollToBottomRef, setReplyToRef }: TimelineViewProps) => {
+const TimelineView = () => {
+	const roomCtx = useRoomContext()
+	const room = roomCtx.store
 	const timeline = useRoomTimeline(room)
 	const client = use(ClientContext)!
 	const loadHistory = useCallback(() => {
 		client.loadMoreHistory(room.roomID)
 			.catch(err => console.error("Failed to load history", err))
 	}, [client, room])
-	const bottomRef = useRef<HTMLDivElement>(null)
+	const bottomRef = roomCtx.timelineBottomRef
 	const topRef = useRef<HTMLDivElement>(null)
 	const timelineViewRef = useRef<HTMLDivElement>(null)
 	const prevOldestTimelineRow = useRef(0)
 	const oldScrollHeight = useRef(0)
-	const scrolledToBottom = useRef(true)
 	const focused = useFocus()
 
 	// When the user scrolls the timeline manually, remember if they were at the bottom,
@@ -49,16 +45,15 @@ const TimelineView = ({ room, scrollToBottomRef, setReplyToRef }: TimelineViewPr
 			return
 		}
 		const timelineView = timelineViewRef.current
-		scrolledToBottom.current = timelineView.scrollTop + timelineView.clientHeight + 1 >= timelineView.scrollHeight
-	}, [])
+		roomCtx.scrolledToBottom = timelineView.scrollTop + timelineView.clientHeight + 1 >= timelineView.scrollHeight
+	}, [roomCtx])
 	// Save the scroll height prior to updating the timeline, so that we can adjust the scroll position if needed.
 	if (timelineViewRef.current) {
 		oldScrollHeight.current = timelineViewRef.current.scrollHeight
 	}
-	scrollToBottomRef.current = () =>
-		bottomRef.current && scrolledToBottom.current && bottomRef.current.scrollIntoView()
 	useLayoutEffect(() => {
-		if (bottomRef.current && scrolledToBottom.current) {
+		const bottomRef = roomCtx.timelineBottomRef
+		if (bottomRef.current && roomCtx.scrolledToBottom) {
 			// For any timeline changes, if we were at the bottom, scroll to the new bottom
 			bottomRef.current.scrollIntoView()
 		} else if (timelineViewRef.current && prevOldestTimelineRow.current > (timeline[0]?.timeline_rowid ?? 0)) {
@@ -66,11 +61,17 @@ const TimelineView = ({ room, scrollToBottomRef, setReplyToRef }: TimelineViewPr
 			timelineViewRef.current.scrollTop += timelineViewRef.current.scrollHeight - oldScrollHeight.current
 		}
 		prevOldestTimelineRow.current = timeline[0]?.timeline_rowid ?? 0
-	}, [timeline])
+		roomCtx.ownMessages = timeline
+			.filter(evt => evt !== null
+				&& evt.sender === client.userID
+				&& evt.type === "m.room.message"
+				&& evt.relation_type !== "m.replace")
+			.map(evt => evt!.rowid)
+	}, [client.userID, roomCtx, timeline])
 	useEffect(() => {
 		const newestEvent = timeline[timeline.length - 1]
 		if (
-			scrolledToBottom.current
+			roomCtx.scrolledToBottom
 			&& focused
 			&& newestEvent
 			&& newestEvent.timeline_rowid > 0
@@ -83,7 +84,7 @@ const TimelineView = ({ room, scrollToBottomRef, setReplyToRef }: TimelineViewPr
 				err => console.error(`Failed to send read receipt for ${newestEvent.event_id}:`, err),
 			)
 		}
-	}, [focused, client, room, timeline])
+	}, [focused, client, roomCtx, room, timeline])
 	useEffect(() => {
 		const topElem = topRef.current
 		if (!topElem) {
@@ -115,7 +116,7 @@ const TimelineView = ({ room, scrollToBottomRef, setReplyToRef }: TimelineViewPr
 					return null
 				}
 				const thisEvt = <TimelineEvent
-					key={entry.rowid} room={room} evt={entry} prevEvt={prevEvt} setReplyToRef={setReplyToRef}
+					key={entry.rowid} evt={entry} prevEvt={prevEvt}
 				/>
 				prevEvt = entry
 				return thisEvt

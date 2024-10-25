@@ -38,6 +38,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
 	_ "golang.org/x/image/webp"
+	"golang.org/x/net/html"
 
 	"go.mau.fi/util/exhttp"
 	"go.mau.fi/util/ffmpeg"
@@ -71,6 +72,9 @@ func (gmx *Gomuks) downloadMediaFromCache(ctx context.Context, w http.ResponseWr
 		return true
 	} else if r.Header.Get("If-None-Match") == entry.ETag() {
 		w.WriteHeader(http.StatusNotModified)
+		return true
+	} else if entry.MimeType != "" && r.URL.Query().Has("fallback") && !isAllowedAvatarMime(entry.MimeType) {
+		w.WriteHeader(http.StatusUnsupportedMediaType)
 		return true
 	}
 	log := zerolog.Ctx(ctx)
@@ -131,30 +135,35 @@ type avatarResponseWriter struct {
 	http.ResponseWriter
 	bgColor   string
 	character string
-	data      []byte
 	errored   bool
 }
 
+func isAllowedAvatarMime(mime string) bool {
+	switch mime {
+	case "image/png", "image/jpeg", "image/gif", "image/webp":
+		return true
+	default:
+		return false
+	}
+}
+
 func (w *avatarResponseWriter) WriteHeader(statusCode int) {
-	if statusCode != http.StatusOK {
-		w.data = []byte(fmt.Sprintf(fallbackAvatarTemplate, w.bgColor, w.character))
+	if statusCode != http.StatusOK && statusCode != http.StatusNotModified {
+		data := []byte(fmt.Sprintf(fallbackAvatarTemplate, w.bgColor, html.EscapeString(w.character)))
 		w.Header().Set("Content-Type", "image/svg+xml")
-		w.Header().Set("Content-Length", strconv.Itoa(len(w.data)))
+		w.Header().Set("Content-Length", strconv.Itoa(len(data)))
 		w.Header().Del("Content-Disposition")
+		w.ResponseWriter.WriteHeader(http.StatusOK)
+		_, _ = w.ResponseWriter.Write(data)
 		w.errored = true
-		statusCode = http.StatusOK
+		return
 	}
 	w.ResponseWriter.WriteHeader(statusCode)
 }
 
 func (w *avatarResponseWriter) Write(p []byte) (n int, err error) {
 	if w.errored {
-		if w.data != nil {
-			_, err = w.ResponseWriter.Write(w.data)
-			w.data = nil
-		}
-		n = len(p)
-		return
+		return len(p), nil
 	}
 	return w.ResponseWriter.Write(p)
 }
@@ -197,6 +206,9 @@ func (gmx *Gomuks) DownloadMedia(w http.ResponseWriter, r *http.Request) {
 	} else if (cacheEntry == nil || cacheEntry.EncFile == nil) && encrypted {
 		mautrix.MNotFound.WithMessage("Media encryption keys not found in cache").Write(w)
 		return
+	} else if cacheEntry != nil && cacheEntry.EncFile != nil && !encrypted {
+		mautrix.MNotFound.WithMessage("Tried to download encrypted media without encrypted flag").Write(w)
+		return
 	}
 
 	if gmx.downloadMediaFromCache(ctx, w, r, cacheEntry, false) {
@@ -216,6 +228,10 @@ func (gmx *Gomuks) DownloadMedia(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := gmx.Client.Client.Download(ctx, mxc)
 	if err != nil {
+		if ctx.Err() != nil {
+			w.WriteHeader(499)
+			return
+		}
 		log.Err(err).Msg("Failed to download media")
 		var httpErr mautrix.HTTPError
 		if cacheEntry == nil {
@@ -226,6 +242,7 @@ func (gmx *Gomuks) DownloadMedia(w http.ResponseWriter, r *http.Request) {
 		if cacheEntry.Error == nil {
 			cacheEntry.Error = &database.MediaError{
 				ReceivedAt: jsontime.UnixMilliNow(),
+				Attempts:   1,
 			}
 		} else {
 			cacheEntry.Error.Attempts++

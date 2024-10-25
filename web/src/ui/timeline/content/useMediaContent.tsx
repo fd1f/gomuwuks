@@ -17,15 +17,15 @@ import { CSSProperties, use } from "react"
 import { getEncryptedMediaURL, getMediaURL } from "@/api/media.ts"
 import type { EventType, MediaMessageEventContent } from "@/api/types"
 import { ImageContainerSize, calculateMediaSize } from "@/util/mediasize.ts"
-import { LightboxContext } from "../../Lightbox.tsx"
+import { LightboxContext } from "../../modal/Lightbox.tsx"
 import DownloadIcon from "@/icons/download.svg?react"
 
 export const useMediaContent = (
 	content: MediaMessageEventContent, evtType: EventType, containerSize?: ImageContainerSize,
 ): [React.ReactElement | null, string, CSSProperties] => {
-	const mediaURL = content.url ? getMediaURL(content.url) : getEncryptedMediaURL(content.file?.url)
-	const thumbnailURL = content.info?.thumbnail_url
-		? getMediaURL(content.info.thumbnail_url) : getEncryptedMediaURL(content.info?.thumbnail_file?.url)
+	const mediaURL = content.file?.url ? getEncryptedMediaURL(content.file.url) : getMediaURL(content.url)
+	const thumbnailURL = content.info?.thumbnail_file?.url
+		? getEncryptedMediaURL(content.info.thumbnail_file.url) : getMediaURL(content.info?.thumbnail_url)
 	if (content.msgtype === "m.image" || evtType === "m.sticker") {
 		const style = calculateMediaSize(content.info?.w, content.info?.h, containerSize)
 		return [<img

@@ -13,11 +13,13 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
-import { useEffect } from "react"
+import { JSX, useEffect } from "react"
+import { getAvatarURL } from "@/api/media.ts"
 import { RoomStateStore } from "@/api/statestore"
-import { useFilteredEmojis } from "@/util/emoji"
+import { Emoji, useFilteredEmojis } from "@/util/emoji"
 import useEvent from "@/util/useEvent.ts"
 import type { ComposerState } from "./MessageComposer.tsx"
+import { AutocompleteUser, useFilteredMembers } from "./userautocomplete.ts"
 import "./Autocompleter.css"
 
 export interface AutocompleteQuery {
@@ -39,20 +41,29 @@ export interface AutocompleterProps {
 
 const positiveMod = (val: number, div: number) => (val % div + div) % div
 
-export const EmojiAutocompleter = ({ params, state, setState, setAutocomplete }: AutocompleterProps) => {
-	const emojis = useFilteredEmojis((params.frozenQuery ?? params.query).slice(1), true)
+interface InnerAutocompleterProps<T> extends AutocompleterProps {
+	items: T[]
+	getText: (item: T) => string
+	getKey: (item: T) => string
+	render: (item: T) => JSX.Element
+}
+
+function useAutocompleter<T>({
+	params, state, setState, setAutocomplete,
+	items, getText, getKey, render,
+}: InnerAutocompleterProps<T>) {
 	const onSelect = useEvent((index: number) => {
-		if (emojis.length === 0) {
+		if (items.length === 0) {
 			return
 		}
-		index = positiveMod(index, emojis.length)
-		const emoji = emojis[index]
+		index = positiveMod(index, items.length)
+		const replacementText = getText(items[index])
 		setState({
-			text: state.text.slice(0, params.startPos) + emoji.u + state.text.slice(params.endPos),
+			text: state.text.slice(0, params.startPos) + replacementText + state.text.slice(params.endPos),
 		})
 		setAutocomplete({
 			...params,
-			endPos: params.startPos + emoji.u.length,
+			endPos: params.startPos + replacementText.length,
 			frozenQuery: params.frozenQuery ?? params.query,
 		})
 		document.querySelector(`div.autocompletion-item[data-index='${index}']`)?.scrollIntoView({ block: "nearest" })
@@ -69,21 +80,52 @@ export const EmojiAutocompleter = ({ params, state, setState, setAutocomplete }:
 			onSelect(params.selected)
 		}
 	}, [onSelect, params.selected])
-	const selected = params.selected !== undefined	 ? positiveMod(params.selected, emojis.length) : -1
+	const selected = params.selected !== undefined	 ? positiveMod(params.selected, items.length) : -1
 	return <div className="autocompletions">
-		{emojis.map((emoji, i) => <div
+		{items.map((item, i) => <div
 			onClick={onClick}
 			data-index={i}
 			className={`autocompletion-item ${selected === i ? "selected" : ""}`}
-			key={emoji.u}
-		>{emoji.u} :{emoji.n}:</div>)}
+			key={getKey(item)}
+		>{render(item)}</div>)}
 	</div>
 }
 
-export const UserAutocompleter = ({ params }: AutocompleterProps) => {
-	return <div className="autocompletions">
-		Autocomplete {params.type} {params.query}
-	</div>
+const emojiFuncs = {
+	getText: (emoji: Emoji) => emoji.u,
+	getKey: (emoji: Emoji) => emoji.u,
+	render: (emoji: Emoji) => <>{emoji.u} :{emoji.n}:</>,
+}
+
+export const EmojiAutocompleter = ({ params, ...rest }: AutocompleterProps) => {
+	const items = useFilteredEmojis((params.frozenQuery ?? params.query).slice(1), true)
+	return useAutocompleter({ params, ...rest, items, ...emojiFuncs })
+}
+
+const escapeDisplayname = (input: string) => input
+	.replace("\n", " ")
+	.replace(/([\\`*_[\]])/g, "\\$1")
+	.replace("<", "&lt;")
+	.replace(">", "&gt;")
+
+const userFuncs = {
+	getText: (user: AutocompleteUser) =>
+		`[${escapeDisplayname(user.displayName)}](https://matrix.to/#/${encodeURIComponent(user.userID)}) `,
+	getKey: (user: AutocompleteUser) => user.userID,
+	render: (user: AutocompleteUser) => <>
+		<img
+			className="small avatar"
+			loading="lazy"
+			src={getAvatarURL(user.userID, { displayname: user.displayName, avatar_url: user.avatarURL })}
+			alt=""
+		/>
+		{user.displayName}
+	</>,
+}
+
+export const UserAutocompleter = ({ params, room, ...rest }: AutocompleterProps) => {
+	const items = useFilteredMembers(room, (params.frozenQuery ?? params.query).slice(1))
+	return useAutocompleter({ params, room, ...rest, items, ...userFuncs })
 }
 
 export const RoomAutocompleter = ({ params }: AutocompleterProps) => {
