@@ -16,7 +16,11 @@
 import EventContentProps from "./props.ts"
 
 const HiddenEvent = ({ event }: EventContentProps) => {
-	return <code>{`{ "type": "${event.type}" }`}</code>
+	if (event.type === "m.reaction") {
+		return `reacted with ${event.content?.["m.relates_to"]?.key || "nothing apparently"}`
+	} else {
+		return <code>{`{ "type": "${event.type}" }`}</code>
+	}
 }
 
 export default HiddenEvent
