@@ -17,6 +17,7 @@ type SyncRoom struct {
 	Meta          *database.Room                                `json:"meta"`
 	Timeline      []database.TimelineRowTuple                   `json:"timeline"`
 	State         map[event.Type]map[string]database.EventRowID `json:"state"`
+	AccountData   map[event.Type]*database.AccountData          `json:"account_data"`
 	Events        []*database.Event                             `json:"events"`
 	Reset         bool                                          `json:"reset"`
 	Notifications []SyncNotification                            `json:"notifications"`
@@ -28,12 +29,13 @@ type SyncNotification struct {
 }
 
 type SyncComplete struct {
-	Rooms     map[id.RoomID]*SyncRoom `json:"rooms"`
-	LeftRooms []id.RoomID             `json:"left_rooms"`
+	Rooms       map[id.RoomID]*SyncRoom              `json:"rooms"`
+	AccountData map[event.Type]*database.AccountData `json:"account_data"`
+	LeftRooms   []id.RoomID                          `json:"left_rooms"`
 }
 
 func (c *SyncComplete) IsEmpty() bool {
-	return len(c.Rooms) == 0
+	return len(c.Rooms) == 0 && len(c.LeftRooms) == 0 && len(c.AccountData) == 0
 }
 
 type EventsDecrypted struct {

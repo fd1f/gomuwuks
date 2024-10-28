@@ -13,9 +13,9 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
-import { use, useCallback, useState } from "react"
+import { use, useCallback, useLayoutEffect, useState } from "react"
 import type { RoomID } from "@/api/types"
-import { ClientContext } from "./ClientContext.ts"
+import ClientContext from "./ClientContext.ts"
 import RoomView from "./RoomView.tsx"
 import RoomList from "./roomlist/RoomList.tsx"
 import "./MainScreen.css"
@@ -26,13 +26,16 @@ const MainScreen = () => {
 	const activeRoom = activeRoomID && client.store.rooms.get(activeRoomID)
 	const roomList = client.store.roomList
 	const setActiveRoom = useCallback((roomID: RoomID) => {
+		console.log("Switching to room", roomID)
 		setActiveRoomID(roomID)
 		if (client.store.rooms.get(roomID)?.stateLoaded === false) {
 			client.loadRoomState(roomID)
 				.catch(err => console.error("Failed to load room state", err))
 		}
 	}, [client])
-	client.store.switchRoom = setActiveRoom
+	useLayoutEffect(() => {
+		client.store.switchRoom = setActiveRoom
+	}, [client, setActiveRoom])
 	const clearActiveRoom = useCallback(() => setActiveRoomID(null), [])
 	const onKeyDownShortcuts = (evt: React.KeyboardEvent) => {
 		if (evt.altKey && (evt.key === "ArrowDown" || evt.key === "ArrowUp")) {

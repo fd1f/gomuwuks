@@ -69,6 +69,12 @@ export interface MemberEventContent {
 	reason?: string
 }
 
+export interface ACLEventContent {
+	allow?: string[]
+	allow_ip_literals?: boolean
+	deny?: string[]
+}
+
 export interface PowerLevelEventContent {
 	users?: Record<UserID, number>
 	users_default?: number
@@ -125,6 +131,15 @@ export interface MediaMessageEventContent extends BaseMessageEventContent {
 	info?: MediaInfo
 }
 
+export interface ReactionEventContent {
+	"m.relates_to": {
+		rel_type: "m.annotation"
+		event_id: EventID
+		key: string
+	}
+	"com.beeper.reaction.shortcode"?: string
+}
+
 export interface EncryptedFile {
 	url: ContentURI
 	k: string
@@ -155,3 +170,29 @@ export interface LocationMessageEventContent extends BaseMessageEventContent {
 }
 
 export type MessageEventContent = TextMessageEventContent | MediaMessageEventContent | LocationMessageEventContent
+
+export type ImagePackUsage = "emoticon" | "sticker"
+
+export interface ImagePackEntry {
+	url: ContentURI
+	body?: string
+	info?: MediaInfo
+	usage?: ImagePackUsage[]
+}
+
+export interface ImagePack {
+	images: Record<string, ImagePackEntry>
+	pack: {
+		display_name?: string
+		avatar_url?: ContentURI
+		usage?: ImagePackUsage[]
+	}
+}
+
+export interface ImagePackRooms {
+	rooms: Record<RoomID, Record<string, Record<string, never>>>
+}
+
+export interface ElementRecentEmoji {
+	recent_emoji: [string, number][]
+}

@@ -31,6 +31,7 @@ import type {
 	ResolveAliasResponse,
 	RoomAlias,
 	RoomID,
+	RoomStateGUID,
 	TimelineRowID,
 	UserID,
 } from "./types"
@@ -128,14 +129,26 @@ export default abstract class RPCClient {
 		return this.request("send_message", params)
 	}
 
-	sendEvent(room_id: RoomID, type: EventType, content: Record<string, unknown>): Promise<RawDBEvent> {
+	sendEvent(room_id: RoomID, type: EventType, content: unknown): Promise<RawDBEvent> {
 		return this.request("send_event", { room_id, type, content })
+	}
+
+	reportEvent(room_id: RoomID, event_id: EventID, reason: string): Promise<boolean> {
+		return this.request("report_event", { room_id, event_id, reason })
+	}
+
+	redactEvent(room_id: RoomID, event_id: EventID, reason: string): Promise<boolean> {
+		return this.request("redact_event", { room_id, event_id, reason })
 	}
 
 	setState(
 		room_id: RoomID, type: EventType, state_key: string, content: Record<string, unknown>,
 	): Promise<EventID> {
 		return this.request("set_state", { room_id, type, state_key, content })
+	}
+
+	setAccountData(type: EventType, content: unknown, room_id?: RoomID): Promise<boolean> {
+		return this.request("set_account_data", { type, content, room_id })
 	}
 
 	markRead(room_id: RoomID, event_id: EventID, receipt_type: ReceiptType = "m.read"): Promise<boolean> {
@@ -148,6 +161,10 @@ export default abstract class RPCClient {
 
 	ensureGroupSessionShared(room_id: RoomID): Promise<boolean> {
 		return this.request("ensure_group_session_shared", { room_id })
+	}
+
+	getSpecificRoomState(keys: RoomStateGUID[]): Promise<RawDBEvent[]> {
+		return this.request("get_specific_room_state", { keys })
 	}
 
 	getRoomState(room_id: RoomID, fetch_members = false, refetch = false): Promise<RawDBEvent[]> {

@@ -16,8 +16,17 @@
 import { MessageEventContent } from "@/api/types"
 import EventContentProps from "./props.ts"
 
+function isImageElement(elem: EventTarget): elem is HTMLImageElement {
+	return (elem as HTMLImageElement).tagName === "IMG"
+}
+
 const onClickHTML = (evt: React.MouseEvent<HTMLDivElement>) => {
-	if ((evt.target as HTMLElement).closest("span.hicli-spoiler")?.classList.toggle("spoiler-revealed")) {
+	if (isImageElement(evt.target)) {
+		window.openLightbox({
+			src: evt.target.src,
+			alt: evt.target.alt,
+		})
+	} else if ((evt.target as HTMLElement).closest?.("span.hicli-spoiler")?.classList.toggle("spoiler-revealed")) {
 		// When unspoilering, don't trigger links and other clickables inside the spoiler
 		evt.preventDefault()
 	}
@@ -33,16 +42,19 @@ const TextMessageBody = ({ event, sender }: EventContentProps) => {
 		classNames.push("emote-message")
 		eventSenderName = sender?.content?.displayname || event.sender
 	}
+	if (event.local_content?.big_emoji) {
+		classNames.push("big-emoji-body")
+	}
+	if (event.local_content?.was_plaintext) {
+		classNames.push("plaintext-body")
+	}
 	if (event.local_content?.sanitized_html) {
 		classNames.push("html-body")
-		if (event.local_content.was_plaintext) {
-			classNames.push("plaintext-body")
-		}
 		return <div
 			onClick={onClickHTML}
 			className={classNames.join(" ")}
 			data-event-sender={eventSenderName}
-			dangerouslySetInnerHTML={{ __html: event.local_content!.sanitized_html! }}
+			dangerouslySetInnerHTML={{ __html: event.local_content.sanitized_html }}
 		/>
 	}
 	return <div className={classNames.join(" ")} data-event-sender={eventSenderName}>{content.body}</div>

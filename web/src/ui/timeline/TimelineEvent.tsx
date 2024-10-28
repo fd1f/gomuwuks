@@ -14,16 +14,16 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import React, { use, useState } from "react"
-import { getAvatarURL, getMediaURL } from "@/api/media.ts"
+import { getAvatarURL, getMediaURL, getUserColorIndex } from "@/api/media.ts"
 import { useRoomState } from "@/api/statestore"
 import { MemDBEvent, MemberEventContent, UnreadType } from "@/api/types"
 import { isEventID } from "@/util/validation.ts"
-import { ClientContext } from "../ClientContext.ts"
+import ClientContext from "../ClientContext.ts"
 import { LightboxContext } from "../modal/Lightbox.tsx"
 import { useRoomContext } from "../roomcontext.ts"
-import EventMenu from "./EventMenu.tsx"
 import { ReplyIDBody } from "./ReplyBody.tsx"
-import getBodyType, { ContentErrorBoundary, EventContentProps, HiddenEvent, MemberBody } from "./content"
+import { ContentErrorBoundary, HiddenEvent, getBodyType, isSmallEvent } from "./content"
+import EventMenu from "./menu/EventMenu.tsx"
 import ErrorIcon from "../../icons/error.svg?react"
 import PendingIcon from "../../icons/pending.svg?react"
 import SentIcon from "../../icons/sent.svg?react"
@@ -32,6 +32,7 @@ import "./TimelineEvent.css"
 export interface TimelineEventProps {
 	evt: MemDBEvent
 	prevEvt: MemDBEvent | null
+	disableMenu?: boolean
 }
 
 const fullTimeFormatter = new Intl.DateTimeFormat("en-GB", { dateStyle: "full", timeStyle: "medium" })
@@ -40,14 +41,18 @@ const formatShortTime = (time: Date) =>
 	`${time.getHours().toString().padStart(2, "0")}:${time.getMinutes().toString().padStart(2, "0")}`
 
 const EventReactions = ({ reactions }: { reactions: Record<string, number> }) => {
+	const reactionEntries = Object.entries(reactions).filter(([, count]) => count > 0).sort((a, b) => b[1] - a[1])
+	if (reactionEntries.length === 0) {
+		return null
+	}
 	return <div className="event-reactions">
-		{Object.entries(reactions).map(([reaction, count]) => count > 0 ?
+		{reactionEntries.map(([reaction, count]) =>
 			<div key={reaction} className="reaction" title={reaction}>
 				{reaction.startsWith("mxc://")
 					? <img className="reaction-emoji" src={getMediaURL(reaction)} alt=""/>
 					: <span className="reaction-emoji">{reaction}</span>}
 				<span className="reaction-count">{count}</span>
-			</div> : null)}
+			</div>)}
 	</div>
 }
 
@@ -63,11 +68,7 @@ const EventSendStatus = ({ evt }: { evt: MemDBEvent }) => {
 	}
 }
 
-function isSmallEvent(bodyType: React.FunctionComponent<EventContentProps>): boolean {
-	return bodyType === HiddenEvent || bodyType === MemberBody
-}
-
-const TimelineEvent = ({ evt, prevEvt }: TimelineEventProps) => {
+const TimelineEvent = ({ evt, prevEvt, disableMenu }: TimelineEventProps) => {
 	const roomCtx = useRoomContext()
 	const client = use(ClientContext)!
 	const [forceContextMenuOpen, setForceContextMenuOpen] = useState(false)
@@ -81,14 +82,18 @@ const TimelineEvent = ({ evt, prevEvt }: TimelineEventProps) => {
 		wrapperClassNames.push("highlight")
 	}
 	let smallAvatar = false
+	let renderAvatar = true
+	let eventTimeOnly = false
 	if (isSmallEvent(BodyType)) {
 		wrapperClassNames.push("hidden-event")
 		smallAvatar = true
+		eventTimeOnly = true
 	} else if (prevEvt?.sender === evt.sender &&
 		prevEvt.timestamp + 15 * 60 * 1000 > evt.timestamp &&
 		!isSmallEvent(getBodyType(prevEvt))) {
 		wrapperClassNames.push("same-sender")
-		smallAvatar = true
+		eventTimeOnly = true
+		renderAvatar = false
 	}
 	const fullTime = fullTimeFormatter.format(eventTS)
 	const shortTime = formatShortTime(eventTS)
@@ -96,10 +101,10 @@ const TimelineEvent = ({ evt, prevEvt }: TimelineEventProps) => {
 	const relatesTo = (evt.orig_content ?? evt.content)?.["m.relates_to"]
 	const replyTo = relatesTo?.["m.in_reply_to"]?.event_id
 	const mainEvent = <div data-event-id={evt.event_id} className={wrapperClassNames.join(" ")}>
-		<div className={`context-menu-container ${forceContextMenuOpen ? "force-open" : ""}`}>
+		{!disableMenu && <div className={`context-menu-container ${forceContextMenuOpen ? "force-open" : ""}`}>
 			<EventMenu evt={evt} setForceOpen={setForceContextMenuOpen}/>
-		</div>
-		<div className="sender-avatar" title={evt.sender}>
+		</div>}
+		{renderAvatar && <div className="sender-avatar" title={evt.sender}>
 			<img
 				className={`${smallAvatar ? "small" : ""} avatar`}
 				loading="lazy"
@@ -107,17 +112,18 @@ const TimelineEvent = ({ evt, prevEvt }: TimelineEventProps) => {
 				onClick={use(LightboxContext)!}
 				alt=""
 			/>
-		</div>
-		<div className="event-sender-and-time">
-			<span className="event-sender">{memberEvtContent?.displayname || evt.sender}</span>
+		</div>}
+		{!eventTimeOnly ? <div className="event-sender-and-time">
+			<span className={`event-sender sender-color-${getUserColorIndex(evt.sender)}`}>
+				{memberEvtContent?.displayname || evt.sender}
+			</span>
 			<span className="event-time" title={fullTime}>{shortTime}</span>
 			{(editEventTS && editTime) ? <span className="event-edited" title={editTime}>
 				(edited at {formatShortTime(editEventTS)})
 			</span> : null}
-		</div>
-		<div className="event-time-only">
+		</div> : <div className="event-time-only">
 			<span className="event-time" title={editTime ? `${fullTime} - ${editTime}` : fullTime}>{shortTime}</span>
-		</div>
+		</div>}
 		<div className="event-content">
 			{isEventID(replyTo) && BodyType !== HiddenEvent ? <ReplyIDBody
 				room={roomCtx.store}

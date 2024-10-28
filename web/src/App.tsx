@@ -17,7 +17,7 @@ import { useEffect, useMemo } from "react"
 import { ScaleLoader } from "react-spinners"
 import Client from "./api/client.ts"
 import WSClient from "./api/wsclient.ts"
-import { ClientContext } from "./ui/ClientContext.ts"
+import ClientContext from "./ui/ClientContext.ts"
 import MainScreen from "./ui/MainScreen.tsx"
 import { LoginScreen, VerificationScreen } from "./ui/login"
 import { LightboxWrapper } from "./ui/modal/Lightbox.tsx"
@@ -26,9 +26,9 @@ import { useEventAsState } from "./util/eventdispatcher.ts"
 
 function App() {
 	const client = useMemo(() => new Client(new WSClient("_gomuks/websocket")), [])
+	window.client = client
 	const connState = useEventAsState(client.rpc.connect)
 	const clientState = useEventAsState(client.state)
-	;((window as unknown) as { client: Client }).client = client
 	useEffect(() => {
 		Notification.requestPermission()
 			.then(permission => console.log("Notification permission:", permission))

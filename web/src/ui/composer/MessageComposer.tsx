@@ -25,8 +25,10 @@ import type {
 	RelatesTo,
 	RoomID,
 } from "@/api/types"
+import { PartialEmoji, emojiToMarkdown } from "@/util/emoji"
+import { escapeMarkdown } from "@/util/markdown.ts"
 import useEvent from "@/util/useEvent.ts"
-import { ClientContext } from "../ClientContext.ts"
+import ClientContext from "../ClientContext.ts"
 import EmojiPicker from "../emojipicker/EmojiPicker.tsx"
 import { ModalContext } from "../modal/Modal.tsx"
 import { useRoomContext } from "../roomcontext.ts"
@@ -67,7 +69,7 @@ const draftStore = {
 		}
 	},
 	set: (roomID: RoomID, data: ComposerState) => localStorage.setItem(`draft-${roomID}`, JSON.stringify(data)),
-	clear: (roomID: RoomID)=> localStorage.removeItem(`draft-${roomID}`),
+	clear: (roomID: RoomID) => localStorage.removeItem(`draft-${roomID}`),
 }
 
 type CaretEvent<T> = React.MouseEvent<T> | React.KeyboardEvent<T> | React.ChangeEvent<T>
@@ -174,7 +176,13 @@ const MessageComposer = () => {
 			}
 		} else if (area.selectionStart === area.selectionEnd) {
 			const acType = charToAutocompleteType(newText?.slice(area.selectionStart - 1, area.selectionStart))
-			if (acType && (area.selectionStart === 1 || newText?.[area.selectionStart - 2] === " ")) {
+			if (
+				acType && (
+					area.selectionStart === 1
+					|| newText?.[area.selectionStart - 2] === " "
+					|| newText?.[area.selectionStart - 2] === "\n"
+				)
+			) {
 				setAutocomplete({
 					type: acType,
 					query: "",
@@ -259,11 +267,26 @@ const MessageComposer = () => {
 	const onAttachFile = useEvent(
 		(evt: React.ChangeEvent<HTMLInputElement>) => doUploadFile(evt.target.files?.[0]),
 	)
-	useEffect(() => {
-		const listener = (evt: ClipboardEvent) => doUploadFile(evt.clipboardData?.files?.[0])
-		document.addEventListener("paste", listener)
-		return () => document.removeEventListener("paste", listener)
-	}, [doUploadFile])
+	const onPaste = useEvent((evt: React.ClipboardEvent<HTMLTextAreaElement>) => {
+		const file = evt.clipboardData?.files?.[0]
+		const text = evt.clipboardData.getData("text/plain")
+		const input = evt.currentTarget
+		if (file) {
+			doUploadFile(file)
+		} else if (
+			input.selectionStart !== input.selectionEnd
+			&& (text.startsWith("http://") || text.startsWith("https://") || text.startsWith("matrix:"))
+		) {
+			setState({
+				text: `${state.text.slice(0, input.selectionStart)}[${
+					escapeMarkdown(state.text.slice(input.selectionStart, input.selectionEnd))
+				}](${escapeMarkdown(text)})${state.text.slice(input.selectionEnd)}`,
+			})
+		} else {
+			return
+		}
+		evt.preventDefault()
+	})
 	// To ensure the cursor jumps to the end, do this in an effect rather than as the initial value of useState
 	// To try to avoid the input bar flashing, use useLayoutEffect instead of useEffect
 	useLayoutEffect(() => {
@@ -313,17 +336,19 @@ const MessageComposer = () => {
 		evt.stopPropagation()
 		roomCtx.setEditing(null)
 	}, [roomCtx])
+	const onSelectEmoji = useEvent((emoji: PartialEmoji) => {
+		setState({
+			text: state.text.slice(0, textInput.current?.selectionStart ?? 0)
+				+ emojiToMarkdown(emoji)
+				+ state.text.slice(textInput.current?.selectionEnd ?? 0),
+		})
+	})
 	const openEmojiPicker = useEvent(() => {
 		openModal({
 			content: <EmojiPicker
 				style={{ bottom: (composerRef.current?.clientHeight ?? 32) + 2, right: "1rem" }}
-				onSelect={emoji => {
-					setState({
-						text: state.text.slice(0, textInput.current?.selectionStart ?? 0)
-							+ emoji.u
-							+ state.text.slice(textInput.current?.selectionEnd ?? 0),
-					})
-				}}
+				room={roomCtx.store}
+				onSelect={onSelectEmoji}
 			/>,
 			onClose: () => textInput.current?.focus(),
 		})
@@ -361,6 +386,7 @@ const MessageComposer = () => {
 				onKeyDown={onComposerKeyDown}
 				onKeyUp={onComposerCaretChange}
 				onClick={onComposerCaretChange}
+				onPaste={onPaste}
 				onChange={onChange}
 				placeholder="Send a message"
 				id="message-composer"

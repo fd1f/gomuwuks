@@ -16,7 +16,17 @@
 import { CachedEventDispatcher } from "../util/eventdispatcher.ts"
 import RPCClient, { SendMessageParams } from "./rpc.ts"
 import { RoomStateStore, StateStore } from "./statestore"
-import type { ClientState, EventID, EventType, RPCEvent, RoomID, UserID } from "./types"
+import type {
+	ClientState,
+	ElementRecentEmoji,
+	EventID,
+	EventType,
+	ImagePackRooms,
+	RPCEvent,
+	RoomID,
+	RoomStateGUID,
+	UserID,
+} from "./types"
 
 export default class Client {
 	readonly state = new CachedEventDispatcher<ClientState>()
@@ -24,6 +34,8 @@ export default class Client {
 
 	constructor(readonly rpc: RPCClient) {
 		this.rpc.event.listen(this.#handleEvent)
+		this.store.accountDataSubs.getSubscriber("im.ponies.emote_rooms")(() =>
+			queueMicrotask(() => this.#handleEmoteRoomsChange()))
 	}
 
 	get userID(): UserID {
@@ -75,7 +87,7 @@ export default class Client {
 		await this.rpc.setState(room.roomID, "m.room.pinned_events", "", { pinned: pinnedEvents })
 	}
 
-	async sendEvent(roomID: RoomID, type: EventType, content: Record<string, unknown>): Promise<void> {
+	async sendEvent(roomID: RoomID, type: EventType, content: unknown): Promise<void> {
 		const room = this.store.rooms.get(roomID)
 		if (!room) {
 			throw new Error("Room not found")
@@ -98,6 +110,77 @@ export default class Client {
 			room.pendingEvents.push(dbEvent.rowid)
 			room.applyEvent(dbEvent, true)
 			room.notifyTimelineSubscribers()
+		}
+	}
+
+	async subscribeToEmojiPack(pack: RoomStateGUID, subscribe: boolean = true) {
+		const emoteRooms = (this.store.accountData.get("im.ponies.emote_rooms") ?? {}) as ImagePackRooms
+		if (!emoteRooms.rooms) {
+			emoteRooms.rooms = {}
+		}
+		if (!emoteRooms.rooms[pack.room_id]) {
+			emoteRooms.rooms[pack.room_id] = {}
+		}
+		if (emoteRooms.rooms[pack.room_id][pack.state_key]) {
+			if (subscribe) {
+				return
+			}
+			delete emoteRooms.rooms[pack.room_id][pack.state_key]
+		} else {
+			if (!subscribe) {
+				return
+			}
+			emoteRooms.rooms[pack.room_id][pack.state_key] = {}
+		}
+		console.log("Changing subscription state for emoji pack", pack, "to", subscribe)
+		await this.rpc.setAccountData("im.ponies.emote_rooms", emoteRooms)
+	}
+
+	async incrementFrequentlyUsedEmoji(targetEmoji: string) {
+		const content = Object.assign({}, this.store.accountData.get("io.element.recent_emoji")) as ElementRecentEmoji
+		if (!Array.isArray(content.recent_emoji)) {
+			content.recent_emoji = []
+		}
+		let found = false
+		for (const [idx, [emoji, count]] of content.recent_emoji.entries()) {
+			if (emoji === targetEmoji) {
+				content.recent_emoji.splice(idx, 1)
+				content.recent_emoji.unshift([emoji, count + 1])
+				found = true
+				break
+			}
+		}
+		if (!found) {
+			content.recent_emoji.unshift([targetEmoji, 1])
+		}
+		if (content.recent_emoji.length > 100) {
+			content.recent_emoji.pop()
+		}
+		this.store.accountData.set("io.element.recent_emoji", content)
+		await this.rpc.setAccountData("io.element.recent_emoji", content)
+	}
+
+	#handleEmoteRoomsChange() {
+		this.store.invalidateEmojiPackKeyCache()
+		const keys = this.store.getEmojiPackKeys()
+		console.log("Loading subscribed emoji pack states", keys)
+		this.loadSpecificRoomState(keys).then(
+			() => this.store.emojiRoomsSub.notify(),
+			err => console.error("Failed to load emote rooms", err),
+		)
+	}
+
+	async loadSpecificRoomState(keys: RoomStateGUID[]): Promise<void> {
+		const missingKeys = keys.filter(key => {
+			const room = this.store.rooms.get(key.room_id)
+			return room && room.getStateEvent(key.type, key.state_key) === undefined
+		})
+		if (missingKeys.length === 0) {
+			return
+		}
+		const events = await this.rpc.getSpecificRoomState(missingKeys)
+		for (const evt of events) {
+			this.store.rooms.get(evt.room_id)?.applyState(evt)
 		}
 	}
 

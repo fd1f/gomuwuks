@@ -47,9 +47,27 @@ func (h *HiClient) handleJSONCommand(ctx context.Context, req *JSONCommand) (any
 		return unmarshalAndCall(req.Data, func(params *sendEventParams) (*database.Event, error) {
 			return h.Send(ctx, params.RoomID, params.EventType, params.Content)
 		})
+	case "report_event":
+		return unmarshalAndCall(req.Data, func(params *reportEventParams) (bool, error) {
+			return true, h.Client.ReportEvent(ctx, params.RoomID, params.EventID, params.Reason)
+		})
+	case "redact_event":
+		return unmarshalAndCall(req.Data, func(params *redactEventParams) (*mautrix.RespSendEvent, error) {
+			return h.Client.RedactEvent(ctx, params.RoomID, params.EventID, mautrix.ReqRedact{
+				Reason: params.Reason,
+			})
+		})
 	case "set_state":
 		return unmarshalAndCall(req.Data, func(params *sendStateEventParams) (id.EventID, error) {
 			return h.SetState(ctx, params.RoomID, params.EventType, params.StateKey, params.Content)
+		})
+	case "set_account_data":
+		return unmarshalAndCall(req.Data, func(params *setAccountDataParams) (bool, error) {
+			if params.RoomID != "" {
+				return true, h.Client.SetRoomAccountData(ctx, params.RoomID, params.Type, params.Content)
+			} else {
+				return true, h.Client.SetAccountData(ctx, params.Type, params.Content)
+			}
 		})
 	case "mark_read":
 		return unmarshalAndCall(req.Data, func(params *markReadParams) (bool, error) {
@@ -70,6 +88,10 @@ func (h *HiClient) handleJSONCommand(ctx context.Context, req *JSONCommand) (any
 	case "get_room_state":
 		return unmarshalAndCall(req.Data, func(params *getRoomStateParams) ([]*database.Event, error) {
 			return h.GetRoomState(ctx, params.RoomID, params.FetchMembers, params.Refetch)
+		})
+	case "get_specific_room_state":
+		return unmarshalAndCall(req.Data, func(params *getSpecificRoomStateParams) ([]*database.Event, error) {
+			return h.DB.CurrentState.GetMany(ctx, params.Keys)
 		})
 	case "paginate":
 		return unmarshalAndCall(req.Data, func(params *paginateParams) (*PaginationResponse, error) {
@@ -136,11 +158,29 @@ type sendEventParams struct {
 	Content   json.RawMessage `json:"content"`
 }
 
+type reportEventParams struct {
+	RoomID  id.RoomID  `json:"room_id"`
+	EventID id.EventID `json:"event_id"`
+	Reason  string     `json:"reason"`
+}
+
+type redactEventParams struct {
+	RoomID  id.RoomID  `json:"room_id"`
+	EventID id.EventID `json:"event_id"`
+	Reason  string     `json:"reason"`
+}
+
 type sendStateEventParams struct {
 	RoomID    id.RoomID       `json:"room_id"`
 	EventType event.Type      `json:"type"`
 	StateKey  string          `json:"state_key"`
 	Content   json.RawMessage `json:"content"`
+}
+
+type setAccountDataParams struct {
+	RoomID  id.RoomID       `json:"room_id,omitempty"`
+	Type    string          `json:"type"`
+	Content json.RawMessage `json:"content"`
 }
 
 type markReadParams struct {
@@ -167,6 +207,10 @@ type getRoomStateParams struct {
 	RoomID       id.RoomID `json:"room_id"`
 	Refetch      bool      `json:"refetch"`
 	FetchMembers bool      `json:"fetch_members"`
+}
+
+type getSpecificRoomStateParams struct {
+	Keys []database.RoomStateGUID `json:"keys"`
 }
 
 type ensureGroupSessionSharedParams struct {

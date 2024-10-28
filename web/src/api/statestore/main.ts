@@ -14,19 +14,26 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import { getAvatarURL } from "@/api/media.ts"
+import { CustomEmojiPack, parseCustomEmojiPack } from "@/util/emoji"
 import { NonNullCachedEventDispatcher } from "@/util/eventdispatcher.ts"
 import { focused } from "@/util/focus.ts"
 import toSearchableString from "@/util/searchablestring.ts"
-import type {
+import Subscribable, { MultiSubscribable } from "@/util/subscribable.ts"
+import {
 	ContentURI,
 	EventRowID,
 	EventsDecryptedData,
+	ImagePack,
+	ImagePackRooms,
 	MemDBEvent,
 	RoomID,
+	RoomStateGUID,
 	SendCompleteData,
 	SyncCompleteData,
 	SyncRoom,
+	UnknownEventContent,
 	UserID,
+	roomStateGUIDToString,
 } from "../types"
 import { RoomStateStore } from "./room.ts"
 
@@ -47,6 +54,13 @@ export interface RoomListEntry {
 export class StateStore {
 	readonly rooms: Map<RoomID, RoomStateStore> = new Map()
 	readonly roomList = new NonNullCachedEventDispatcher<RoomListEntry[]>([])
+	readonly accountData: Map<string, UnknownEventContent> = new Map()
+	readonly accountDataSubs = new MultiSubscribable()
+	readonly emojiRoomsSub = new Subscribable()
+	#frequentlyUsedEmoji: Map<string, number> | null = null
+	#emojiPackKeys: RoomStateGUID[] | null = null
+	#watchedRoomEmojiPacks: Record<string, CustomEmojiPack> | null = null
+	#personalEmojiPack: CustomEmojiPack | null = null
 	switchRoom?: (roomID: RoomID) => void
 	imageAuthToken?: string
 
@@ -111,7 +125,7 @@ export class StateStore {
 			let isNewRoom = false
 			let room = this.rooms.get(roomID)
 			if (!room) {
-				room = new RoomStateStore(data.meta)
+				room = new RoomStateStore(data.meta, this)
 				this.rooms.set(roomID, room)
 				isNewRoom = true
 			}
@@ -136,6 +150,13 @@ export class StateStore {
 					this.showNotification(room, notification.event_rowid, notification.sound)
 				}
 			}
+		}
+		for (const ad of Object.values(sync.account_data)) {
+			if (ad.type === "io.element.recent_emoji") {
+				this.#frequentlyUsedEmoji = null
+			}
+			this.accountData.set(ad.type, ad.content)
+			this.accountDataSubs.notify(ad.type)
 		}
 		for (const roomID of sync.left_rooms) {
 			this.rooms.delete(roomID)
@@ -170,6 +191,85 @@ export class StateStore {
 		if (updatedRoomList) {
 			this.roomList.emit(updatedRoomList)
 		}
+	}
+
+	invalidateEmojiPackKeyCache() {
+		this.#emojiPackKeys = null
+		this.#watchedRoomEmojiPacks = null
+	}
+
+	invalidateEmojiPacksCache() {
+		this.#watchedRoomEmojiPacks = null
+		this.emojiRoomsSub.notify()
+	}
+
+	getPersonalEmojiPack(): CustomEmojiPack | null {
+		if (this.#personalEmojiPack === null) {
+			const pack = this.accountData.get("im.ponies.user_emotes")
+			if (!pack || !pack.images) {
+				return null
+			}
+			this.#personalEmojiPack = parseCustomEmojiPack(pack as ImagePack, "personal", "Personal pack")
+		}
+		return this.#personalEmojiPack
+	}
+
+	getEmojiPackKeys(): RoomStateGUID[] {
+		if (this.#emojiPackKeys === null) {
+			const emoteRooms = this.accountData.get("im.ponies.emote_rooms") as ImagePackRooms | undefined
+			try {
+				const emojiPacks: RoomStateGUID[] = []
+				for (const [roomID, packs] of Object.entries(emoteRooms?.rooms ?? {})) {
+					for (const pack of Object.keys(packs)) {
+						emojiPacks.push({ room_id: roomID, type: "im.ponies.room_emotes", state_key: pack })
+					}
+				}
+				this.#emojiPackKeys = emojiPacks
+			} catch (err) {
+				console.warn("Failed to parse emote rooms data", err, emoteRooms)
+				this.#emojiPackKeys = []
+			}
+		}
+		return this.#emojiPackKeys
+	}
+
+	getRoomEmojiPacks() {
+		if (this.#watchedRoomEmojiPacks === null) {
+			this.#watchedRoomEmojiPacks = Object.fromEntries(
+				this.getEmojiPackKeys()
+					.map(key => {
+						const room = this.rooms.get(key.room_id)
+						if (!room) {
+							console.warn("Failed to find room for emoji pack", key)
+							return null
+						}
+						const pack = room.getEmojiPack(key.state_key)
+						if (!pack) {
+							console.warn("Failed to find pack", key)
+							return null
+						}
+						return [roomStateGUIDToString(key), pack]
+					})
+					.filter(pack => !!pack),
+			)
+		}
+		return this.#watchedRoomEmojiPacks ?? {}
+	}
+
+	get frequentlyUsedEmoji(): Map<string, number> {
+		if (this.#frequentlyUsedEmoji === null) {
+			const emojiData = this.accountData.get("io.element.recent_emoji")
+			try {
+				const recentList = emojiData?.recent_emoji as [string, number][] | undefined
+				this.#frequentlyUsedEmoji = new Map(recentList?.toSorted(
+					([, count1], [, count2]) => count2 - count1,
+				))
+			} catch (err) {
+				console.warn("Failed to parse recent emoji data", err, emojiData?.recent_emoji)
+				this.#frequentlyUsedEmoji = new Map()
+			}
+		}
+		return this.#frequentlyUsedEmoji
 	}
 
 	showNotification(room: RoomStateStore, rowid: EventRowID, sound: boolean) {

@@ -83,6 +83,7 @@ export interface LocalContent {
 	sanitized_html?: TrustedHTML
 	html_version?: number
 	was_plaintext?: boolean
+	big_emoji?: boolean
 }
 
 export interface BaseDBEvent {
@@ -129,9 +130,15 @@ export interface MemDBEvent extends BaseDBEvent {
 
 export interface DBAccountData {
 	user_id: UserID
-	room_id?: RoomID
 	type: EventType
-	content: unknown
+	content: UnknownEventContent
+}
+
+export interface DBRoomAccountData {
+	user_id: UserID
+	room_id: RoomID
+	type: EventType
+	content: UnknownEventContent
 }
 
 export interface PaginationResponse {
@@ -156,4 +163,29 @@ export interface ClientWellKnown {
 	"m.identity_server": {
 		base_url: string
 	}
+}
+
+export function roomStateGUIDToString(guid: RoomStateGUID): string {
+	return `${encodeURIComponent(guid.room_id)}/${guid.type}/${encodeURIComponent(guid.state_key)}`
+}
+
+export function stringToRoomStateGUID(str?: string | null): RoomStateGUID | undefined {
+	if (!str) {
+		return
+	}
+	const [roomID, type, stateKey] = str.split("/")
+	if (!roomID || !type || !stateKey) {
+		return
+	}
+	return {
+		room_id: decodeURIComponent(roomID) as RoomID,
+		type: type as EventType,
+		state_key: decodeURIComponent(stateKey),
+	}
+}
+
+export interface RoomStateGUID {
+	room_id: RoomID
+	type: EventType
+	state_key: string
 }

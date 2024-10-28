@@ -18,6 +18,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"go.mau.fi/util/emojirunes"
 	"go.mau.fi/util/exzerolog"
 	"go.mau.fi/util/jsontime"
 	"maunium.net/go/mautrix"
@@ -104,9 +105,11 @@ func (h *HiClient) processSyncResponse(ctx context.Context, resp *mautrix.RespSy
 		ctx.Value(syncContextKey).(*syncContext).shouldWakeupRequestQueue = true
 	}
 
+	accountData := make(map[event.Type]*database.AccountData, len(resp.AccountData.Events))
+	var err error
 	for _, evt := range resp.AccountData.Events {
 		evt.Type.Class = event.AccountDataEventType
-		err := h.DB.AccountData.Put(ctx, h.Account.UserID, evt.Type, evt.Content.VeryRaw)
+		accountData[evt.Type], err = h.DB.AccountData.Put(ctx, h.Account.UserID, evt.Type, evt.Content.VeryRaw)
 		if err != nil {
 			return fmt.Errorf("failed to save account data event %s: %w", evt.Type.Type, err)
 		}
@@ -120,6 +123,7 @@ func (h *HiClient) processSyncResponse(ctx context.Context, resp *mautrix.RespSy
 			}
 		}
 	}
+	ctx.Value(syncContextKey).(*syncContext).evt.AccountData = accountData
 	for roomID, room := range resp.Rooms.Join {
 		err := h.processSyncJoinedRoom(ctx, roomID, room)
 		if err != nil {
@@ -133,7 +137,7 @@ func (h *HiClient) processSyncResponse(ctx context.Context, resp *mautrix.RespSy
 		}
 	}
 	h.Account.NextBatch = resp.NextBatch
-	err := h.DB.Account.PutNextBatch(ctx, h.Account.UserID, resp.NextBatch)
+	err = h.DB.Account.PutNextBatch(ctx, h.Account.UserID, resp.NextBatch)
 	if err != nil {
 		return fmt.Errorf("failed to save next_batch: %w", err)
 	}
@@ -179,10 +183,11 @@ func (h *HiClient) processSyncJoinedRoom(ctx context.Context, roomID id.RoomID, 
 		}
 	}
 
+	accountData := make(map[event.Type]*database.AccountData, len(room.AccountData.Events))
 	for _, evt := range room.AccountData.Events {
 		evt.Type.Class = event.AccountDataEventType
 		evt.RoomID = roomID
-		err = h.DB.AccountData.PutRoom(ctx, h.Account.UserID, roomID, evt.Type, evt.Content.VeryRaw)
+		accountData[evt.Type], err = h.DB.AccountData.PutRoom(ctx, h.Account.UserID, roomID, evt.Type, evt.Content.VeryRaw)
 		if err != nil {
 			return fmt.Errorf("failed to save account data event %s: %w", evt.Type.Type, err)
 		}
@@ -216,6 +221,7 @@ func (h *HiClient) processSyncJoinedRoom(ctx context.Context, roomID id.RoomID, 
 		&room.Summary,
 		receiptsList,
 		newOwnReceipts,
+		accountData,
 	)
 	if err != nil {
 		return err
@@ -361,7 +367,7 @@ func (h *HiClient) calculateLocalContent(ctx context.Context, dbEvt *database.Ev
 	}
 	if content != nil {
 		var sanitizedHTML string
-		var wasPlaintext bool
+		var wasPlaintext, bigEmoji bool
 		var inlineImages []id.ContentURI
 		if content.Format == event.FormatHTML && content.FormattedBody != "" {
 			var err error
@@ -378,21 +384,34 @@ func (h *HiClient) calculateLocalContent(ctx context.Context, dbEvt *database.Ev
 				inlineImages = nil
 			}
 		} else {
-			var builder strings.Builder
-			linkifyAndWriteBytes(&builder, []byte(content.Body))
-			sanitizedHTML = builder.String()
+			hasSpecialCharacters := false
+			for _, char := range content.Body {
+				if char == '<' || char == '>' || char == '&' || char == '.' || char == ':' {
+					hasSpecialCharacters = true
+					break
+				}
+			}
+			if hasSpecialCharacters {
+				var builder strings.Builder
+				builder.Grow(len(content.Body) + builderPreallocBuffer)
+				linkifyAndWriteBytes(&builder, []byte(content.Body))
+				sanitizedHTML = builder.String()
+			} else if len(content.Body) < 100 && emojirunes.IsOnlyEmojis(content.Body) {
+				bigEmoji = true
+			}
 			wasPlaintext = true
 		}
 		return &database.LocalContent{
 			SanitizedHTML: sanitizedHTML,
 			HTMLVersion:   CurrentHTMLSanitizerVersion,
 			WasPlaintext:  wasPlaintext,
+			BigEmoji:      bigEmoji,
 		}, inlineImages
 	}
 	return nil, nil
 }
 
-const CurrentHTMLSanitizerVersion = 3
+const CurrentHTMLSanitizerVersion = 4
 
 func (h *HiClient) ReprocessExistingEvent(ctx context.Context, evt *database.Event) {
 	if (evt.Type != event.EventMessage.Type && evt.DecryptedType != event.EventMessage.Type) ||
@@ -513,6 +532,7 @@ func (h *HiClient) processStateAndTimeline(
 	summary *mautrix.LazyLoadSummary,
 	receipts []*database.Receipt,
 	newOwnReceipts []id.EventID,
+	accountData map[event.Type]*database.AccountData,
 ) error {
 	updatedRoom := &database.Room{
 		ID: room.ID,
@@ -646,11 +666,24 @@ func (h *HiClient) processStateAndTimeline(
 		timelineIDs := make([]database.EventRowID, len(timeline.Events))
 		readUpToIndex := -1
 		for i := len(timeline.Events) - 1; i >= 0; i-- {
-			if slices.Contains(newOwnReceipts, timeline.Events[i].ID) {
+			evt := timeline.Events[i]
+			isRead := slices.Contains(newOwnReceipts, evt.ID)
+			isOwnEvent := evt.Sender == h.Account.UserID
+			if isRead || isOwnEvent {
 				readUpToIndex = i
 				// Reset unread counts if we see our own read receipt in the timeline.
 				// It'll be updated with new unreads (if any) at the end.
 				updatedRoom.UnreadCounts = database.UnreadCounts{}
+				if !isRead {
+					receipts = append(receipts, &database.Receipt{
+						RoomID:      room.ID,
+						UserID:      h.Account.UserID,
+						ReceiptType: event.ReceiptTypeRead,
+						EventID:     evt.ID,
+						Timestamp:   jsontime.UM(time.UnixMilli(evt.Timestamp)),
+					})
+					newOwnReceipts = append(newOwnReceipts, evt.ID)
+				}
 				break
 			}
 		}
@@ -747,10 +780,11 @@ func (h *HiClient) processStateAndTimeline(
 		}
 	}
 	// TODO why is *old* unread count sometimes zero when processing the read receipt that is making it zero?
-	if roomChanged || len(newOwnReceipts) > 0 || len(timelineRowTuples) > 0 || len(allNewEvents) > 0 {
+	if roomChanged || len(accountData) > 0 || len(newOwnReceipts) > 0 || len(timelineRowTuples) > 0 || len(allNewEvents) > 0 {
 		ctx.Value(syncContextKey).(*syncContext).evt.Rooms[room.ID] = &SyncRoom{
 			Meta:          room,
 			Timeline:      timelineRowTuples,
+			AccountData:   accountData,
 			State:         changedState,
 			Reset:         timeline.Limited,
 			Events:        allNewEvents,
