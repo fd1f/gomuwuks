@@ -35,7 +35,6 @@ const MainScreen = () => {
 	const [rightPanel, setRightPanel] = useReducer(rpReducer, null)
 	const client = use(ClientContext)!
 	const activeRoom = activeRoomID ? client.store.rooms.get(activeRoomID) : undefined
-	const roomList = client.store.roomList
 	const setActiveRoom = useCallback((roomID: RoomID) => {
 		console.log("Switching to room", roomID)
 		setActiveRoomID(roomID)
