@@ -13,13 +13,31 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
-import { StrictMode } from "react"
-import { createRoot } from "react-dom/client"
-import App from "./App.tsx"
-import "./index.css"
+import { useEffect, useState } from "react"
+import ResizeHandle, { ResizeHandleProps } from "./ResizeHandle.tsx"
 
-createRoot(document.getElementById("root")!).render(
-	<StrictMode>
-		<App/>
-	</StrictMode>,
-)
+export const useResizeHandle = (
+	defaultSize: number,
+	minWidth: number,
+	maxWidth: number,
+	localStorageKey: string,
+	extraProps: Partial<ResizeHandleProps>,
+) => {
+	const [width, setWidth] = useState(() => {
+		const savedWidth = localStorage.getItem(localStorageKey)
+		if (savedWidth) {
+			return Number(savedWidth)
+		}
+		return defaultSize
+	})
+	useEffect(() => {
+		localStorage.setItem(localStorageKey, width.toString())
+	}, [localStorageKey, width])
+	return [width, <ResizeHandle
+		width={width}
+		minWidth={minWidth}
+		maxWidth={maxWidth}
+		setWidth={setWidth}
+		{...extraProps}
+	/>] as const
+}

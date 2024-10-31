@@ -31,7 +31,7 @@ import useEvent from "@/util/useEvent.ts"
 import ClientContext from "../ClientContext.ts"
 import EmojiPicker from "../emojipicker/EmojiPicker.tsx"
 import { ModalContext } from "../modal/Modal.tsx"
-import { useRoomContext } from "../roomcontext.ts"
+import { useRoomContext } from "../roomview/roomcontext.ts"
 import { ReplyBody } from "../timeline/ReplyBody.tsx"
 import { useMediaContent } from "../timeline/content/useMediaContent.tsx"
 import type { AutocompleteQuery } from "./Autocompleter.tsx"
@@ -107,6 +107,7 @@ const MessageComposer = () => {
 		setState({
 			media: isMedia ? evtContent as MediaMessageEventContent : null,
 			text: (!evt.content.filename || evt.content.filename !== evt.content.body) ? (evtContent.body ?? "") : "",
+			replyTo: null,
 		})
 		textInput.current?.focus()
 	}, [room.roomID])
@@ -354,7 +355,7 @@ const MessageComposer = () => {
 		})
 	})
 	const Autocompleter = getAutocompleter(autocomplete)
-	return <div className="message-composer" ref={composerRef}>
+	return <>
 		{Autocompleter && autocomplete && <div className="autocompletions-wrapper"><Autocompleter
 			params={autocomplete}
 			room={room}
@@ -362,48 +363,50 @@ const MessageComposer = () => {
 			setState={setState}
 			setAutocomplete={setAutocomplete}
 		/></div>}
-		{replyToEvt && <ReplyBody
-			room={room}
-			event={replyToEvt}
-			onClose={closeReply}
-			isThread={replyToEvt.content?.["m.relates_to"]?.rel_type === "m.thread"}
-		/>}
-		{editing && <ReplyBody
-			room={room}
-			event={editing}
-			isEditing={true}
-			isThread={false}
-			onClose={stopEditing}
-		/>}
-		{loadingMedia && <div className="composer-media"><ScaleLoader/></div>}
-		{state.media && <ComposerMedia content={state.media} clearMedia={clearMedia}/>}
-		<div className="input-area">
-			<textarea
-				autoFocus={!isMobileDevice}
-				ref={textInput}
-				rows={textRows.current}
-				value={state.text}
-				onKeyDown={onComposerKeyDown}
-				onKeyUp={onComposerCaretChange}
-				onClick={onComposerCaretChange}
-				onPaste={onPaste}
-				onChange={onChange}
-				placeholder="Send a message"
-				id="message-composer"
-			/>
-			<button onClick={openEmojiPicker}><EmojiIcon/></button>
-			<button
-				onClick={openFilePicker}
-				disabled={!!state.media || loadingMedia}
-				title={state.media ? "You can only attach one file at a time" : ""}
-			><AttachIcon/></button>
-			<button
-				onClick={sendMessage}
-				disabled={(!state.text && !state.media) || loadingMedia}
-			><SendIcon/></button>
-			<input ref={fileInput} onChange={onAttachFile} type="file" value="" style={{ display: "none" }}/>
+		<div className="message-composer" ref={composerRef}>
+			{replyToEvt && <ReplyBody
+				room={room}
+				event={replyToEvt}
+				onClose={closeReply}
+				isThread={replyToEvt.content?.["m.relates_to"]?.rel_type === "m.thread"}
+			/>}
+			{editing && <ReplyBody
+				room={room}
+				event={editing}
+				isEditing={true}
+				isThread={false}
+				onClose={stopEditing}
+			/>}
+			{loadingMedia && <div className="composer-media"><ScaleLoader/></div>}
+			{state.media && <ComposerMedia content={state.media} clearMedia={clearMedia}/>}
+			<div className="input-area">
+				<textarea
+					autoFocus={!isMobileDevice}
+					ref={textInput}
+					rows={textRows.current}
+					value={state.text}
+					onKeyDown={onComposerKeyDown}
+					onKeyUp={onComposerCaretChange}
+					onClick={onComposerCaretChange}
+					onPaste={onPaste}
+					onChange={onChange}
+					placeholder="Send a message"
+					id="message-composer"
+				/>
+				<button onClick={openEmojiPicker}><EmojiIcon/></button>
+				<button
+					onClick={openFilePicker}
+					disabled={!!state.media || loadingMedia}
+					title={state.media ? "You can only attach one file at a time" : ""}
+				><AttachIcon/></button>
+				<button
+					onClick={sendMessage}
+					disabled={(!state.text && !state.media) || loadingMedia}
+				><SendIcon/></button>
+				<input ref={fileInput} onChange={onAttachFile} type="file" value=""/>
+			</div>
 		</div>
-	</div>
+	</>
 }
 
 interface ComposerMediaProps {

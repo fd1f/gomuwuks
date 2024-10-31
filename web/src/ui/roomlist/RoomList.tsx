@@ -16,29 +16,21 @@
 import React, { use, useCallback, useRef, useState } from "react"
 import type { RoomID } from "@/api/types"
 import { useEventAsState } from "@/util/eventdispatcher.ts"
+import reverseMap from "@/util/reversemap.ts"
 import toSearchableString from "@/util/searchablestring.ts"
 import ClientContext from "../ClientContext.ts"
 import Entry from "./Entry.tsx"
 import "./RoomList.css"
 
 interface RoomListProps {
-	setActiveRoom: (room_id: RoomID) => void
 	activeRoomID: RoomID | null
 }
 
-const RoomList = ({ setActiveRoom, activeRoomID }: RoomListProps) => {
+const RoomList = ({ activeRoomID }: RoomListProps) => {
 	const roomList = useEventAsState(use(ClientContext)!.store.roomList)
 	const roomFilterRef = useRef<HTMLInputElement>(null)
 	const [roomFilter, setRoomFilter] = useState("")
 	const [realRoomFilter, setRealRoomFilter] = useState("")
-	const clickRoom = useCallback((evt: React.MouseEvent) => {
-		const roomID = evt.currentTarget.getAttribute("data-room-id")
-		if (roomID) {
-			setActiveRoom(roomID)
-		} else {
-			console.warn("No room ID :(", evt.currentTarget)
-		}
-	}, [setActiveRoom])
 
 	const updateRoomFilter = useCallback((evt: React.ChangeEvent<HTMLInputElement>) => {
 		setRoomFilter(evt.target.value)
@@ -61,15 +53,10 @@ const RoomList = ({ setActiveRoom, activeRoomID }: RoomListProps) => {
 					isActive={room.room_id === activeRoomID}
 					hidden={roomFilter ? !room.search_name.includes(realRoomFilter) : false}
 					room={room}
-					setActiveRoom={clickRoom}
 				/>,
 			)}
 		</div>
 	</div>
-}
-
-function reverseMap<T, O>(arg: T[], fn: (a: T) => O) {
-	return arg.map((_, i, arr) => fn(arr[arr.length - i - 1]))
 }
 
 export default RoomList

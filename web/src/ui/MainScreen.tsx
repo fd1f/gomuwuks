@@ -13,55 +13,109 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
-import { use, useCallback, useLayoutEffect, useState } from "react"
+import { use, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useState } from "react"
 import type { RoomID } from "@/api/types"
 import ClientContext from "./ClientContext.ts"
-import RoomView from "./RoomView.tsx"
+import MainScreenContext, { MainScreenContextFields } from "./MainScreenContext.ts"
+import RightPanel, { RightPanelProps } from "./rightpanel/RightPanel.tsx"
 import RoomList from "./roomlist/RoomList.tsx"
+import RoomView from "./roomview/RoomView.tsx"
+import { useResizeHandle } from "./util/useResizeHandle.tsx"
 import "./MainScreen.css"
+
+const rpReducer = (prevState: RightPanelProps | null, newState: RightPanelProps | null) => {
+	if (prevState?.type === newState?.type) {
+		return null
+	}
+	return newState
+}
 
 const MainScreen = () => {
 	const [activeRoomID, setActiveRoomID] = useState<RoomID | null>(null)
+	const [rightPanel, setRightPanel] = useReducer(rpReducer, null)
 	const client = use(ClientContext)!
-	const activeRoom = activeRoomID && client.store.rooms.get(activeRoomID)
+	const activeRoom = activeRoomID ? client.store.rooms.get(activeRoomID) : undefined
 	const roomList = client.store.roomList
 	const setActiveRoom = useCallback((roomID: RoomID) => {
 		console.log("Switching to room", roomID)
 		setActiveRoomID(roomID)
+		setRightPanel(null)
 		if (client.store.rooms.get(roomID)?.stateLoaded === false) {
 			client.loadRoomState(roomID)
 				.catch(err => console.error("Failed to load room state", err))
 		}
 	}, [client])
+	const context: MainScreenContextFields = useMemo(() => ({
+		setActiveRoom,
+		clickRoom: (evt: React.MouseEvent) => {
+			const roomID = evt.currentTarget.getAttribute("data-room-id")
+			if (roomID) {
+				setActiveRoom(roomID)
+			} else {
+				console.warn("No room ID :(", evt.currentTarget)
+			}
+		},
+		clearActiveRoom: () => setActiveRoomID(null),
+		setRightPanel,
+		closeRightPanel: () => setRightPanel(null),
+		clickRightPanelOpener: (evt: React.MouseEvent) => {
+			const type = evt.currentTarget.getAttribute("data-target-panel")
+			if (type === "pinned-messages" || type === "members") {
+				setRightPanel({ type })
+			} else {
+				throw new Error(`Invalid right panel type ${type}`)
+			}
+		},
+	}), [setRightPanel, setActiveRoom])
 	useLayoutEffect(() => {
 		client.store.switchRoom = setActiveRoom
 	}, [client, setActiveRoom])
-	const clearActiveRoom = useCallback(() => setActiveRoomID(null), [])
-	const onKeyDownShortcuts = (evt: React.KeyboardEvent) => {
-		if (evt.altKey && (evt.key === "ArrowDown" || evt.key === "ArrowUp")) {
-			let direction = evt.key === "ArrowUp" ? 1 : -1 
-			// populate the list
-			let roomIDList: RoomID[] = []
-			roomList.current.forEach((e) => {roomIDList.push(e.room_id)})
-			// if no room is active, default to the last one in the array (top of the room list)
-			let nextIndex = roomIDList.length - 1
-			if (activeRoomID) {
-				nextIndex = roomIDList.indexOf(activeRoomID) + direction
-				// wraparound
-				if (nextIndex >= roomIDList.length) {
-					nextIndex = 0
-				} else if (nextIndex < 0) {
-					nextIndex = roomIDList.length - 1
-				}
+	useEffect(() => {
+		const styleTags = document.createElement("style")
+		styleTags.textContent = `
+			div.html-body > a.hicli-matrix-uri-user[href="matrix:u/${client.userID.slice(1).replaceAll(`"`, `\\"`)}"] {
+				background-color: var(--highlight-pill-background-color);
+				color: var(--highlight-pill-text-color);
 			}
-			console.log("we are currently on", activeRoomID)
-			console.log("this would switch to", roomIDList[nextIndex], roomList)
-			setActiveRoom(roomIDList[nextIndex])
+		`
+		document.head.appendChild(styleTags)
+		return () => {
+			document.head.removeChild(styleTags)
 		}
+	}, [client.userID])
+	const [roomListWidth, resizeHandle1] = useResizeHandle(
+		300, 48, 900, "roomListWidth", { className: "room-list-resizer" },
+	)
+	const [rightPanelWidth, resizeHandle2] = useResizeHandle(
+		300, 100, 900, "rightPanelWidth", { className: "right-panel-resizer", inverted: true },
+	)
+	const extraStyle = {
+		["--room-list-width" as string]: `${roomListWidth}px`,
+		["--right-panel-width" as string]: `${rightPanelWidth}px`,
 	}
-	return <main className={`matrix-main ${activeRoom ? "room-selected" : ""}`} onKeyDown={onKeyDownShortcuts}>
-		<RoomList setActiveRoom={setActiveRoom} activeRoomID={activeRoomID} />
-		{activeRoom && <RoomView key={activeRoomID} clearActiveRoom={clearActiveRoom} room={activeRoom} />}
+	const classNames = ["matrix-main"]
+	if (activeRoom) {
+		classNames.push("room-selected")
+	}
+	if (rightPanel) {
+		classNames.push("right-panel-open")
+	}
+	return <main className={classNames.join(" ")} style={extraStyle}>
+		<MainScreenContext value={context}>
+			<RoomList activeRoomID={activeRoomID}/>
+			{resizeHandle1}
+			{activeRoom
+				? <RoomView
+					key={activeRoomID}
+					room={activeRoom}
+					rightPanel={rightPanel}
+					rightPanelResizeHandle={resizeHandle2}
+				/>
+				: rightPanel && <>
+					{resizeHandle2}
+					{rightPanel && <RightPanel {...rightPanel}/>}
+				</>}
+		</MainScreenContext>
 	</main>
 }
 

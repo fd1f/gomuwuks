@@ -1,0 +1,13 @@
+div.room-view {
+	grid-area: roomview;
+	overflow: hidden;
+	height: 100%;
+	display: grid;
+	outline: none;
+	grid-template:
+		"header" 3rem
+		"messageview" 1fr
+		"autocomplete" 0
+		"input" auto
+		/ 1fr;
+}
