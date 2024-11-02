@@ -41,7 +41,7 @@ function usePreviewText(evt?: MemDBEvent, senderMemberEvt?: MemDBEvent | null): 
 		}
 		return [
 			`${displayname}: ${evt.content.body}`,
-			`${displayname.length > 16 ? displayname.slice(0, 12) + "…" : displayname}: ${evt.content.body}`,
+			`${displayname.length > 16 ? displayname.slice(0, 12) + ",,," : displayname}: ${evt.content.body}`,
 		]
 	}
 	return ["", ""]
