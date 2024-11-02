@@ -16,6 +16,7 @@
 import { JSX, use } from "react"
 import MainScreenContext from "../MainScreenContext.ts"
 import PinnedMessages from "./PinnedMessages.tsx"
+import RoomMembers from "./RoomMembers.tsx"
 import CloseButton from "@/icons/close.svg?react"
 import "./RightPanel.css"
 
@@ -39,7 +40,7 @@ function renderRightPanelContent({ type }: RightPanelProps): JSX.Element | null 
 	case "pinned-messages":
 		return <PinnedMessages />
 	case "members":
-		return <>Member list is not yet implemented</>
+		return <RoomMembers />
 	}
 }
 
