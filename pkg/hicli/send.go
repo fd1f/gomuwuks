@@ -22,6 +22,7 @@ import (
 	"maunium.net/go/mautrix/crypto"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/format"
+	"maunium.net/go/mautrix/format/mdext"
 	"maunium.net/go/mautrix/id"
 
 	"go.mau.fi/gomuks/pkg/hicli/database"
@@ -29,8 +30,37 @@ import (
 )
 
 var (
-	rainbowWithHTML = goldmark.New(format.Extensions, format.HTMLOptions, goldmark.WithExtensions(rainbow.Extension))
+	rainbowWithHTML = goldmark.New(format.Extensions, goldmark.WithExtensions(mdext.Math, mdext.CustomEmoji), format.HTMLOptions, goldmark.WithExtensions(rainbow.Extension))
+	defaultNoHTML   = goldmark.New(format.Extensions, goldmark.WithExtensions(mdext.Math, mdext.CustomEmoji, mdext.EscapeHTML), format.HTMLOptions)
 )
+
+var htmlToMarkdownForInput = ptr.Clone(format.MarkdownHTMLParser)
+
+func init() {
+	htmlToMarkdownForInput.PillConverter = func(displayname, mxid, eventID string, ctx format.Context) string {
+		switch {
+		case len(mxid) == 0, mxid[0] == '@':
+			return fmt.Sprintf("[%s](%s)", displayname, id.UserID(mxid).URI().MatrixToURL())
+		case len(eventID) > 0:
+			return fmt.Sprintf("[%s](%s)", displayname, id.RoomID(mxid).EventURI(id.EventID(eventID)).MatrixToURL())
+		case mxid[0] == '!' && displayname == mxid:
+			return fmt.Sprintf("[%s](%s)", displayname, id.RoomID(mxid).URI().MatrixToURL())
+		case mxid[0] == '#':
+			return fmt.Sprintf("[%s](%s)", displayname, id.RoomAlias(mxid).URI().MatrixToURL())
+		default:
+			return htmlToMarkdownForInput.LinkConverter(displayname, "https://matrix.to/#/"+mxid, ctx)
+		}
+	}
+	htmlToMarkdownForInput.ImageConverter = func(src, alt, title, width, height string, isEmoji bool) string {
+		if isEmoji {
+			return fmt.Sprintf(`![%s](%s %q)`, alt, src, "Emoji: "+title)
+		} else if title != "" {
+			return fmt.Sprintf(`![%s](%s %q)`, alt, src, title)
+		} else {
+			return fmt.Sprintf(`![%s](%s)`, alt, src)
+		}
+	}
+}
 
 func (h *HiClient) SendMessage(
 	ctx context.Context,
@@ -40,8 +70,25 @@ func (h *HiClient) SendMessage(
 	relatesTo *event.RelatesTo,
 	mentions *event.Mentions,
 ) (*database.Event, error) {
+	if strings.HasPrefix(text, "/raw ") {
+		parts := strings.SplitN(text, " ", 3)
+		if len(parts) < 2 || len(parts[1]) == 0 {
+			return nil, fmt.Errorf("invalid /raw command")
+		}
+		var content json.RawMessage
+		if len(parts) == 3 {
+			content = json.RawMessage(parts[2])
+		} else {
+			content = json.RawMessage("{}")
+		}
+		if !json.Valid(content) {
+			return nil, fmt.Errorf("invalid JSON in /raw command")
+		}
+		return h.send(ctx, roomID, event.Type{Type: parts[1]}, content, "")
+	}
 	var content event.MessageEventContent
 	msgType := event.MsgText
+	origText := text
 	if strings.HasPrefix(text, "/me ") {
 		msgType = event.MsgEmote
 		text = strings.TrimPrefix(text, "/me ")
@@ -55,12 +102,13 @@ func (h *HiClient) SendMessage(
 		content.FormattedBody = rainbow.ApplyColor(content.FormattedBody)
 	} else if strings.HasPrefix(text, "/plain ") {
 		text = strings.TrimPrefix(text, "/plain ")
-		content = format.RenderMarkdown(text, false, false)
+		content = format.TextToContent(text)
 	} else if strings.HasPrefix(text, "/html ") {
 		text = strings.TrimPrefix(text, "/html ")
-		content = format.RenderMarkdown(text, false, true)
+		text = strings.Replace(text, "\n", "<br>", -1)
+		content = format.HTMLToContent(text)
 	} else if text != "" {
-		content = format.RenderMarkdown(text, true, true)
+		content = format.RenderMarkdownCustom(text, defaultNoHTML)
 	}
 	content.MsgType = msgType
 	if base != nil {
@@ -99,7 +147,7 @@ func (h *HiClient) SendMessage(
 			content.RelatesTo = relatesTo
 		}
 	}
-	return h.Send(ctx, roomID, event.EventMessage, &content)
+	return h.send(ctx, roomID, event.EventMessage, &content, origText)
 }
 
 func (h *HiClient) MarkRead(ctx context.Context, roomID id.RoomID, eventID id.EventID, receiptType event.ReceiptType) error {
@@ -151,6 +199,16 @@ func (h *HiClient) Send(
 	evtType event.Type,
 	content any,
 ) (*database.Event, error) {
+	return h.send(ctx, roomID, evtType, content, "")
+}
+
+func (h *HiClient) send(
+	ctx context.Context,
+	roomID id.RoomID,
+	evtType event.Type,
+	content any,
+	overrideEditSource string,
+) (*database.Event, error) {
 	room, err := h.DB.Room.Get(ctx, roomID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get room metadata: %w", err)
@@ -190,6 +248,9 @@ func (h *HiClient) Send(
 	var inlineImages []id.ContentURI
 	mautrixEvt := dbEvt.AsRawMautrix()
 	dbEvt.LocalContent, inlineImages = h.calculateLocalContent(ctx, dbEvt, mautrixEvt)
+	if overrideEditSource != "" {
+		dbEvt.LocalContent.EditSource = overrideEditSource
+	}
 	_, err = h.DB.Event.Insert(ctx, dbEvt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to insert event into database: %w", err)

@@ -54,6 +54,7 @@ export interface RoomListEntry {
 export class StateStore {
 	readonly rooms: Map<RoomID, RoomStateStore> = new Map()
 	readonly roomList = new NonNullCachedEventDispatcher<RoomListEntry[]>([])
+	currentRoomListFilter: string = ""
 	readonly accountData: Map<string, UnknownEventContent> = new Map()
 	readonly accountDataSubs = new MultiSubscribable()
 	readonly emojiRoomsSub = new Subscribable()
@@ -61,8 +62,16 @@ export class StateStore {
 	#emojiPackKeys: RoomStateGUID[] | null = null
 	#watchedRoomEmojiPacks: Record<string, CustomEmojiPack> | null = null
 	#personalEmojiPack: CustomEmojiPack | null = null
-	switchRoom?: (roomID: RoomID) => void
+	switchRoom?: (roomID: RoomID | null) => void
+	activeRoomID?: RoomID
 	imageAuthToken?: string
+
+	getFilteredRoomList(): RoomListEntry[] {
+		if (!this.currentRoomListFilter) {
+			return this.roomList.current
+		}
+		return this.roomList.current.filter(entry => entry.search_name.includes(this.currentRoomListFilter))
+	}
 
 	#shouldHideRoom(entry: SyncRoom): boolean {
 		const cc = entry.meta.creation_content
@@ -159,6 +168,9 @@ export class StateStore {
 			this.accountDataSubs.notify(ad.type)
 		}
 		for (const roomID of sync.left_rooms) {
+			if (this.activeRoomID === roomID) {
+				this.switchRoom?.(null)
+			}
 			this.rooms.delete(roomID)
 			changedRoomListEntries.set(roomID, null)
 		}

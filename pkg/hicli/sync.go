@@ -25,6 +25,7 @@ import (
 	"maunium.net/go/mautrix/crypto"
 	"maunium.net/go/mautrix/crypto/olm"
 	"maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/format"
 	"maunium.net/go/mautrix/id"
 	"maunium.net/go/mautrix/pushrules"
 
@@ -366,8 +367,8 @@ func (h *HiClient) calculateLocalContent(ctx context.Context, dbEvt *database.Ev
 		content = content.NewContent
 	}
 	if content != nil {
-		var sanitizedHTML string
-		var wasPlaintext, bigEmoji bool
+		var sanitizedHTML, editSource string
+		var wasPlaintext, hasMath, bigEmoji bool
 		var inlineImages []id.ContentURI
 		if content.Format == event.FormatHTML && content.FormattedBody != "" {
 			var err error
@@ -377,11 +378,22 @@ func (h *HiClient) calculateLocalContent(ctx context.Context, dbEvt *database.Ev
 					Stringer("event_id", dbEvt.ID).
 					Msg("Failed to sanitize HTML")
 			}
+			hasMath = strings.Contains(sanitizedHTML, "<hicli-math")
 			if len(inlineImages) > 0 && dbEvt.RowID != 0 {
 				for _, uri := range inlineImages {
 					h.addMediaCache(ctx, dbEvt.RowID, uri.CUString(), nil, nil, "")
 				}
 				inlineImages = nil
+			}
+			if dbEvt.LocalContent != nil && dbEvt.LocalContent.EditSource != "" {
+				editSource = dbEvt.LocalContent.EditSource
+			} else if evt.Sender == h.Account.UserID {
+				editSource, _ = format.HTMLToMarkdownFull(htmlToMarkdownForInput, content.FormattedBody)
+				if content.MsgType == event.MsgEmote {
+					editSource = "/me " + editSource
+				} else if content.MsgType == event.MsgNotice {
+					editSource = "/notice " + editSource
+				}
 			}
 		} else {
 			hasSpecialCharacters := false
@@ -399,6 +411,11 @@ func (h *HiClient) calculateLocalContent(ctx context.Context, dbEvt *database.Ev
 			} else if len(content.Body) < 100 && emojirunes.IsOnlyEmojis(content.Body) {
 				bigEmoji = true
 			}
+			if content.MsgType == event.MsgEmote {
+				editSource = "/me " + content.Body
+			} else if content.MsgType == event.MsgNotice {
+				editSource = "/notice " + content.Body
+			}
 			wasPlaintext = true
 		}
 		return &database.LocalContent{
@@ -406,12 +423,14 @@ func (h *HiClient) calculateLocalContent(ctx context.Context, dbEvt *database.Ev
 			HTMLVersion:   CurrentHTMLSanitizerVersion,
 			WasPlaintext:  wasPlaintext,
 			BigEmoji:      bigEmoji,
+			HasMath:       hasMath,
+			EditSource:    editSource,
 		}, inlineImages
 	}
 	return nil, nil
 }
 
-const CurrentHTMLSanitizerVersion = 4
+const CurrentHTMLSanitizerVersion = 6
 
 func (h *HiClient) ReprocessExistingEvent(ctx context.Context, evt *database.Event) {
 	if (evt.Type != event.EventMessage.Type && evt.DecryptedType != event.EventMessage.Type) ||
@@ -595,12 +614,12 @@ func (h *HiClient) processStateAndTimeline(
 	}
 	processNewEvent := func(evt *event.Event, isTimeline, isUnread bool) (database.EventRowID, error) {
 		evt.RoomID = room.ID
-		dbEvt, err := h.processEvent(ctx, evt, summary, decryptionQueue, false)
+		dbEvt, err := h.processEvent(ctx, evt, summary, decryptionQueue, evt.Unsigned.TransactionID != "")
 		if err != nil {
 			return -1, err
 		}
 		if isUnread {
-			if dbEvt.UnreadType.Is(database.UnreadTypeNotify) {
+			if dbEvt.UnreadType.Is(database.UnreadTypeNotify) && h.firstSyncReceived {
 				newNotifications = append(newNotifications, SyncNotification{
 					RowID: dbEvt.RowID,
 					Sound: dbEvt.UnreadType.Is(database.UnreadTypeSound),
