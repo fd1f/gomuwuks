@@ -1,0 +1,4 @@
+.member-list .room-member {
+    display: flex;
+    align-items: center;
+}
