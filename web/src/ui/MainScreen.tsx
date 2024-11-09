@@ -13,7 +13,7 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
-import { use, useEffect, useMemo, useReducer, useState } from "react"
+import { use, useEffect, useInsertionEffect, useMemo, useReducer, useState } from "react"
 import Client from "@/api/client.ts"
 import { RoomStateStore } from "@/api/statestore"
 import type { RoomID } from "@/api/types"
@@ -43,6 +43,7 @@ class ContextFields implements MainScreenContextFields {
 	) {
 		this.keybindings = new Keybindings(client.store, this)
 		client.store.switchRoom = this.setActiveRoom
+		window.mainScreenContext = this
 	}
 
 	setActiveRoom = (roomID: RoomID | null) => {
@@ -56,6 +57,10 @@ class ContextFields implements MainScreenContextFields {
 		}
 		this.client.store.activeRoomID = room?.roomID
 		this.keybindings.activeRoom = room
+		if (roomID) {
+			document.querySelector(`div.room-entry[data-room-id="${CSS.escape(roomID)}"]`)
+				?.scrollIntoView({ block: "nearest" })
+		}
 	}
 
 	clickRoom = (evt: React.MouseEvent) => {
@@ -89,7 +94,7 @@ const MainScreen = () => {
 		[client],
 	)
 	useEffect(() => context.keybindings.listen(), [context])
-	useEffect(() => {
+	useInsertionEffect(() => {
 		const styleTags = document.createElement("style")
 		styleTags.textContent = `
 			div.html-body > a.hicli-matrix-uri-user[href="matrix:u/${client.userID.slice(1).replaceAll(`"`, `\\"`)}"] {

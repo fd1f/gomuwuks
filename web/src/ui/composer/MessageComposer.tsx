@@ -199,16 +199,35 @@ const MessageComposer = () => {
 	const onComposerKeyDown = useEvent((evt: React.KeyboardEvent<HTMLTextAreaElement>) => {
 		const inp = evt.currentTarget
 		const fullKey = keyToString(evt)
-		if (fullKey === "Enter") {
-			sendMessage(evt)
-		} else if (autocomplete) {
+		if (autocomplete) {
+			let autocompleteUpdate: Partial<AutocompleteQuery> | null | undefined
 			if (fullKey === "Tab" || fullKey === "ArrowDown") {
-				setAutocomplete({ ...autocomplete, selected: (autocomplete.selected ?? -1) + 1 })
-				evt.preventDefault()
+				autocompleteUpdate = { selected: (autocomplete.selected ?? -1) + 1 }
 			} else if (fullKey === "Shift+Tab" || fullKey === "ArrowUp") {
-				setAutocomplete({ ...autocomplete, selected: (autocomplete.selected ?? 0) - 1 })
+				autocompleteUpdate = { selected: (autocomplete.selected ?? 0) - 1 }
+			} else if (fullKey === "Enter") {
+				if (autocomplete.selected !== undefined) {
+					// Don't capture enter if a result is already selected
+					sendMessage(evt)
+				} else {
+					autocompleteUpdate = { selected: 0, close: true }
+				}
+			} else if (fullKey === "Escape") {
+				autocompleteUpdate = null
+				if (autocomplete.frozenQuery) {
+					setState({
+						text: state.text.slice(0, autocomplete.startPos)
+							+ autocomplete.frozenQuery
+							+ state.text.slice(autocomplete.endPos),
+					})
+				}
+			}
+			if (autocompleteUpdate !== undefined) {
+				setAutocomplete(autocompleteUpdate && { ...autocomplete, ...autocompleteUpdate })
 				evt.preventDefault()
 			}
+		} else if (fullKey === "Enter") {
+			sendMessage(evt)
 		} else if (fullKey === "ArrowUp" && inp.selectionStart === 0 && inp.selectionEnd === 0) {
 			const currentlyEditing = editing
 				? roomCtx.ownMessages.indexOf(editing.rowid)
@@ -239,7 +258,7 @@ const MessageComposer = () => {
 			typingSentAt.current = now
 			client.rpc.setTyping(room.roomID, 10_000)
 				.catch(err => console.error("Failed to send typing notification:", err))
-		} else if (evt.target.value == "" && typingSentAt.current > 0) {
+		} else if (evt.target.value === "" && typingSentAt.current > 0) {
 			typingSentAt.current = 0
 			client.rpc.setTyping(room.roomID, 0)
 				.catch(err => console.error("Failed to send stop typing notification:", err))
