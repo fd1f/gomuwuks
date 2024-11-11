@@ -2,3 +2,12 @@
     display: flex;
     align-items: center;
 }
+
+.room-member .avatar {
+    padding: 4px;
+}
+
+.member-category-title {
+    font-weight: bold;
+    padding-left: 4px;
+}

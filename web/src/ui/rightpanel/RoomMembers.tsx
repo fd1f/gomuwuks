@@ -1,9 +1,11 @@
 import { use } from "react"
 import { RoomContext } from "../roomview/roomcontext.ts"
+import { LightboxContext } from "../modal/Lightbox.tsx"
 // is this even the right thing?
 import { getAvatarURL } from "@/api/media.ts"
 import type { UserID, ContentURI, MemberEventContent } from "@/api/types/mxtypes.ts"
 import { RoomStateStore } from "@/api/statestore/room.ts"
+import "./RoomMembers.css"
 
 
 export interface RoomMemberEntryProps {
@@ -49,7 +51,9 @@ const RoomMemberEntry = (props: RoomMemberEntryProps) => {
         <img
             className="avatar"
             loading="lazy"
+            onClick={use(LightboxContext)!}
             src={getAvatarURL(props.userID, {displayname: props.displayName, avatar_url: props.avatarURL})}
+            title={props.userID}
         />
         <span>{props.displayName ?? props.userID}</span>
     </div>)
@@ -69,7 +73,7 @@ const RoomMemberCategory = (props: RoomMemberCategoryProps) => {
         return null
     }
     return <>
-        {props.title ? <p>{props.title}</p> : null}
+        {props.title ? <div className="member-category-title">{props.title}</div> : null}
         <div className="member-list">{list}</div>
     </>
 }
