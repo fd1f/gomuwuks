@@ -77,6 +77,10 @@ func (h *HiClient) handleJSONCommand(ctx context.Context, req *JSONCommand) (any
 		return unmarshalAndCall(req.Data, func(params *setTypingParams) (bool, error) {
 			return true, h.SetTyping(ctx, params.RoomID, time.Duration(params.Timeout)*time.Millisecond)
 		})
+	case "get_profile":
+		return unmarshalAndCall(req.Data, func(params *getProfileParams) (*mautrix.RespUserProfile, error) {
+			return h.Client.GetProfile(ctx, params.UserID)
+		})
 	case "get_event":
 		return unmarshalAndCall(req.Data, func(params *getEventParams) (*database.Event, error) {
 			return h.GetEvent(ctx, params.RoomID, params.EventID)
@@ -87,7 +91,7 @@ func (h *HiClient) handleJSONCommand(ctx context.Context, req *JSONCommand) (any
 		})
 	case "get_room_state":
 		return unmarshalAndCall(req.Data, func(params *getRoomStateParams) ([]*database.Event, error) {
-			return h.GetRoomState(ctx, params.RoomID, params.FetchMembers, params.Refetch)
+			return h.GetRoomState(ctx, params.RoomID, params.IncludeMembers, params.FetchMembers, params.Refetch)
 		})
 	case "get_specific_room_state":
 		return unmarshalAndCall(req.Data, func(params *getSpecificRoomStateParams) ([]*database.Event, error) {
@@ -194,6 +198,10 @@ type setTypingParams struct {
 	Timeout int       `json:"timeout"`
 }
 
+type getProfileParams struct {
+	UserID id.UserID `json:"user_id"`
+}
+
 type getEventParams struct {
 	RoomID  id.RoomID  `json:"room_id"`
 	EventID id.EventID `json:"event_id"`
@@ -204,9 +212,10 @@ type getEventsByRowIDsParams struct {
 }
 
 type getRoomStateParams struct {
-	RoomID       id.RoomID `json:"room_id"`
-	Refetch      bool      `json:"refetch"`
-	FetchMembers bool      `json:"fetch_members"`
+	RoomID         id.RoomID `json:"room_id"`
+	Refetch        bool      `json:"refetch"`
+	FetchMembers   bool      `json:"fetch_members"`
+	IncludeMembers bool      `json:"include_members"`
 }
 
 type getSpecificRoomStateParams struct {

@@ -17,6 +17,7 @@ import { use } from "react"
 import { getAvatarURL, getUserColorIndex } from "@/api/media.ts"
 import { RoomStateStore, useRoomEvent, useRoomState } from "@/api/statestore"
 import type { EventID, MemDBEvent, MemberEventContent } from "@/api/types"
+import { getDisplayname } from "@/util/validation.ts"
 import ClientContext from "../ClientContext.ts"
 import { ContentErrorBoundary, getBodyType } from "./content"
 import CloseButton from "@/icons/close.svg?react"
@@ -69,6 +70,9 @@ const onClickReply = (evt: React.MouseEvent) => {
 
 export const ReplyBody = ({ room, event, onClose, isThread, isEditing }: ReplyBodyProps) => {
 	const memberEvt = useRoomState(room, "m.room.member", event.sender)
+	if (!memberEvt) {
+		use(ClientContext)?.requestMemberEvent(room, event.sender)
+	}
 	const memberEvtContent = memberEvt?.content as MemberEventContent | undefined
 	const BodyType = getBodyType(event, true)
 	const classNames = ["reply-body"]
@@ -94,7 +98,7 @@ export const ReplyBody = ({ room, event, onClose, isThread, isEditing }: ReplyBo
 				/>
 			</div>
 			<span className={`event-sender sender-color-${userColorIndex}`}>
-				{memberEvtContent?.displayname || event.sender}
+				{getDisplayname(event.sender, memberEvtContent)}
 			</span>
 			{onClose && <button className="close-reply" onClick={onClose}><CloseButton/></button>}
 		</div>

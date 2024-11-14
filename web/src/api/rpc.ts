@@ -34,6 +34,7 @@ import type {
 	RoomStateGUID,
 	TimelineRowID,
 	UserID,
+	UserProfile,
 } from "./types"
 
 export interface ConnectionEvent {
@@ -159,6 +160,10 @@ export default abstract class RPCClient {
 		return this.request("set_typing", { room_id, timeout })
 	}
 
+	getProfile(user_id: UserID): Promise<UserProfile> {
+		return this.request("get_profile", { user_id })
+	}
+
 	ensureGroupSessionShared(room_id: RoomID): Promise<boolean> {
 		return this.request("ensure_group_session_shared", { room_id })
 	}
@@ -167,8 +172,10 @@ export default abstract class RPCClient {
 		return this.request("get_specific_room_state", { keys })
 	}
 
-	getRoomState(room_id: RoomID, fetch_members = false, refetch = false): Promise<RawDBEvent[]> {
-		return this.request("get_room_state", { room_id, fetch_members, refetch })
+	getRoomState(
+		room_id: RoomID, include_members = false, fetch_members = false, refetch = false,
+	): Promise<RawDBEvent[]> {
+		return this.request("get_room_state", { room_id, include_members, fetch_members, refetch })
 	}
 
 	getEvent(room_id: RoomID, event_id: EventID): Promise<RawDBEvent> {

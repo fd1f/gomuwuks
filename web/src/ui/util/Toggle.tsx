@@ -13,18 +13,25 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
+import { InputHTMLAttributes } from "react"
+import "./Toggle.css"
 
-if (!window.Iterator?.prototype.map) {
-	(new Map([])).keys().__proto__.map = function(callbackFn) {
-		const output = []
-		let i = 0
-		for (const item of this) {
-			output.push(callbackFn(item, i))
-			i++
-		}
-		return output
-	}
-	Array.prototype.toArray = function() {
-		return this
-	}
+export interface ToggleProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "type"> {
+	disabledColor?: string
+	enabledColor?: string
 }
+
+const Toggle = (props: ToggleProps) => {
+	const extraStyle = {
+		"--disabled-color": props.disabledColor,
+		"--enabled-color": props.enabledColor,
+	}
+	return <input
+		{...props}
+		type="checkbox"
+		className={props.className ? `toggle ${props.className}` : "toggle"}
+		style={{ ...(props.style ?? {}), ...extraStyle }}
+	/>
+}
+
+export default Toggle
