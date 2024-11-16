@@ -61,7 +61,6 @@
 	--sent-error-color: var(--error-color);
 	--blockquote-border-color: var(--border-color);
 	--lightbox-button-color: var(--border-color);
-	--codeblock-background-color: inherit;
 	--clickable-cursor: default;
 
 	@media (prefers-color-scheme: dark) {
@@ -165,13 +164,14 @@ button, a.button, span.button {
 	align-items: center;
 	color: inherit;
 
+	&:hover, &:focus {
+		background-color: var(--button-hover-color);
+	}
+
 	&:disabled {
 		cursor: default;
 		color: var(--secondary-text-color);
-	}
-
-	&:hover:not(:disabled), &:focus:not(:disabled) {
-		background-color: var(--button-hover-color);
+		background: none;
 	}
 }
 
