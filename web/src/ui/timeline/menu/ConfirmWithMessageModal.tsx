@@ -28,7 +28,7 @@ interface ConfirmWithMessageProps {
 	onConfirm: (reason: string) => void
 }
 
-const ConfirmWithMessageProps = ({
+const ConfirmWithMessageModal = ({
 	evt, title, description, placeholder, confirmButton, onConfirm,
 }: ConfirmWithMessageProps) => {
 	const [reason, setReason] = useState("")
@@ -40,7 +40,7 @@ const ConfirmWithMessageProps = ({
 	const onChangeReason = useCallback((evt: React.ChangeEvent<HTMLInputElement>) => {
 		setReason(evt.target.value)
 	}, [])
-	return <div className="confirm-message-modal">
+	return <>
 		<h3>{title}</h3>
 		<div className="timeline-event-container">
 			<TimelineEvent evt={evt} prevEvt={null} disableMenu={true} />
@@ -48,12 +48,12 @@ const ConfirmWithMessageProps = ({
 		<div className="confirm-description">
 			{description}
 		</div>
-		<input value={reason} type="text" placeholder={placeholder} onChange={onChangeReason} />
+		<input autoFocus value={reason} type="text" placeholder={placeholder} onChange={onChangeReason} />
 		<div className="confirm-buttons">
 			<button onClick={closeModal}>Cancel</button>
 			<button onClick={onConfirmWrapped}>{confirmButton}</button>
 		</div>
-	</div>
+	</>
 }
 
-export default ConfirmWithMessageProps
+export default ConfirmWithMessageModal

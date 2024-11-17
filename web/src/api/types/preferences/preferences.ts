@@ -13,6 +13,7 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
+import type { ContentURI } from "../../types"
 import { Preference, anyContext } from "./types.ts"
 
 export const codeBlockStyles = [
@@ -56,7 +57,7 @@ export const preferences = {
 		allowedValues: codeBlockStyles,
 	}),
 	pointer_cursor: new Preference<boolean>({
-		displayName: "Pointer cursor",
+		displayName: "Use pointer cursor",
 		description: "Whether to use a pointer cursor for clickable elements.",
 		allowedContexts: anyContext,
 		defaultValue: false,
@@ -73,11 +74,35 @@ export const preferences = {
 		allowedContexts: anyContext,
 		defaultValue: true,
 	}),
+	show_redacted_events: new Preference<boolean>({
+		displayName: "Show redacted event placeholders",
+		description: "Whether redacted events should leave a placeholder behind in the room timeline.",
+		allowedContexts: anyContext,
+		defaultValue: true,
+	}),
+	show_membership_events: new Preference<boolean>({
+		displayName: "Show membership events",
+		description: "Whether membership and profile changes should be visible in the room timeline.",
+		allowedContexts: anyContext,
+		defaultValue: true,
+	}),
+	show_date_separators: new Preference<boolean>({
+		displayName: "Show date separators",
+		description: "Whether messages in different days should have a date separator between them in the room timeline.",
+		allowedContexts: anyContext,
+		defaultValue: true,
+	}),
 	show_room_emoji_packs: new Preference<boolean>({
 		displayName: "Show room emoji packs",
 		description: "Whether to show custom emoji packs provided by the room. If disabled, only your personal packs are shown in all rooms.",
 		allowedContexts: anyContext,
 		defaultValue: true,
+	}),
+	custom_notification_sound: new Preference<ContentURI>({
+		displayName: "Custom notification sound",
+		description: "The mxc:// URI to a custom notification sound.",
+		allowedContexts: anyContext,
+		defaultValue: "",
 	}),
 } as const
 
@@ -85,4 +110,8 @@ export const existingPreferenceKeys = new Set(Object.keys(preferences))
 
 export type Preferences = {
 	-readonly [name in keyof typeof preferences]?: typeof preferences[name]["defaultValue"]
+}
+
+export function isValidPreferenceKey(key: unknown): key is keyof Preferences {
+	return typeof key === "string" && existingPreferenceKeys.has(key)
 }

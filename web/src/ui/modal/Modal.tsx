@@ -13,12 +13,14 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
-import React, { JSX, createContext, useCallback, useReducer } from "react"
+import React, { JSX, createContext, useCallback, useLayoutEffect, useReducer, useRef } from "react"
 
 export interface ModalState {
 	content: JSX.Element
 	dimmed?: boolean
-	wrapperClass?: string
+	boxed?: boolean
+	boxClass?: string
+	innerBoxClass?: string
 	onClose?: () => void
 }
 
@@ -44,17 +46,36 @@ export const ModalWrapper = ({ children }: { children: React.ReactNode }) => {
 		if (evt.key === "Escape") {
 			setState(null)
 		}
+		evt.stopPropagation()
 	}, [])
-	return <ModalContext value={setState}>
-		{children}
-		{state && <div
-			className={`overlay ${state.wrapperClass ?? "modal"} ${state.dimmed ? "dimmed" : ""}`}
+	const wrapperRef = useRef<HTMLDivElement>(null)
+	useLayoutEffect(() => {
+		if (wrapperRef.current && (!document.activeElement || !wrapperRef.current.contains(document.activeElement))) {
+			wrapperRef.current.focus()
+		}
+	}, [state])
+	let modal: JSX.Element | null = null
+	if (state) {
+		let content = <ModalCloseContext value={onClickWrapper}>{state.content}</ModalCloseContext>
+		if (state.boxed) {
+			content = <div className={`modal-box ${state.boxClass ?? ""}`}>
+				<div className={`modal-box-inner ${state.innerBoxClass ?? ""}`}>
+					{content}
+				</div>
+			</div>
+		}
+		modal = <div
+			className={`overlay modal ${state.dimmed ? "dimmed" : ""}`}
 			onClick={onClickWrapper}
 			onKeyDown={onKeyWrapper}
+			tabIndex={-1}
+			ref={wrapperRef}
 		>
-			<ModalCloseContext value={onClickWrapper}>
-				{state.content}
-			</ModalCloseContext>
-		</div>}
+			{content}
+		</div>
+	}
+	return <ModalContext value={setState}>
+		{children}
+		{modal}
 	</ModalContext>
 }
