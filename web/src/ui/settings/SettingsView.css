@@ -3,8 +3,12 @@ div.settings-view {
 	display: flex;
 	flex-direction: column;
 
-	h2, h3 {
+	h2, h3, h4 {
 		margin: 0;
+	}
+
+	summary > h3, summary > h4 {
+		display: inline;
 	}
 
 	table {
@@ -44,24 +48,11 @@ div.settings-view {
 
 			> button {
 				padding: .5rem 1rem;
+				font-weight: bold;
 
-				&.save {
-					background-color: var(--primary-color);
+				&.delete:hover, &.delete:focus {
+					background-color: var(--error-color);
 					color: var(--inverted-text-color);
-					font-weight: bold;
-
-					&:hover, &:focus {
-						background-color: var(--primary-color-dark);
-					}
-				}
-
-				&.delete {
-					font-weight: bold;
-
-					&:hover, &:focus {
-						background-color: var(--error-color);
-						color: var(--inverted-text-color);
-					}
 				}
 			}
 		}

@@ -134,20 +134,24 @@ interface SettingsViewProps {
 const CustomCSSInput = ({ setPref, room }: { setPref: SetPrefFunc, room: RoomStateStore }) => {
 	const client = use(ClientContext)!
 	const [context, setContext] = useState(PreferenceContext.Account)
-	const [text, setText] = useState("")
+	const getContextText = useCallback((context: PreferenceContext) => {
+		if (context === PreferenceContext.Account) {
+			return client.store.serverPreferenceCache.custom_css
+		} else if (context === PreferenceContext.Device) {
+			return client.store.localPreferenceCache.custom_css
+		} else if (context === PreferenceContext.RoomAccount) {
+			return room.serverPreferenceCache.custom_css
+		} else if (context === PreferenceContext.RoomDevice) {
+			return room.localPreferenceCache.custom_css
+		}
+	}, [client, room])
+	const origText = getContextText(context)
+	const [text, setText] = useState(origText ?? "")
 	const onChangeContext = useCallback((evt: React.ChangeEvent<HTMLSelectElement>) => {
 		const newContext = evt.target.value as PreferenceContext
 		setContext(newContext)
-		if (newContext === PreferenceContext.Account) {
-			setText(client.store.serverPreferenceCache.custom_css ?? "")
-		} else if (newContext === PreferenceContext.Device) {
-			setText(client.store.localPreferenceCache.custom_css ?? "")
-		} else if (newContext === PreferenceContext.RoomAccount) {
-			setText(room.serverPreferenceCache.custom_css ?? "")
-		} else if (newContext === PreferenceContext.RoomDevice) {
-			setText(room.localPreferenceCache.custom_css ?? "")
-		}
-	}, [client, room])
+		setText(getContextText(newContext) ?? "")
+	}, [getContextText])
 	const onChangeText = useCallback((evt: React.ChangeEvent<HTMLTextAreaElement>) => {
 		setText(evt.target.value)
 	}, [])
@@ -170,15 +174,43 @@ const CustomCSSInput = ({ setPref, room }: { setPref: SetPrefFunc, room: RoomSta
 		</div>
 		<textarea value={text} onChange={onChangeText}/>
 		<div className="buttons">
-			<button className="delete" onClick={onDelete}>Delete</button>
-			<button className="save" onClick={onSave}>Save</button>
+			{origText !== undefined && <button className="delete" onClick={onDelete}>Delete</button>}
+			<button className="save primary-color-button" onClick={onSave} disabled={origText === text}>Save</button>
 		</div>
+	</div>
+}
+
+const AppliedSettingsView = ({ room }: SettingsViewProps) => {
+	const client = use(ClientContext)!
+
+	return <div className="applied-settings">
+		<h3>Raw settings data</h3>
+		<details>
+			<summary><h4>Applied settings in this room</h4></summary>
+			<JSONView data={room.preferences}/>
+		</details>
+		<details open>
+			<summary><h4>Global account settings</h4></summary>
+			<JSONView data={client.store.serverPreferenceCache}/>
+		</details>
+		<details open>
+			<summary><h4>Global device settings</h4></summary>
+			<JSONView data={client.store.localPreferenceCache}/>
+		</details>
+		<details open>
+			<summary><h4>Room account settings</h4></summary>
+			<JSONView data={room.serverPreferenceCache}/>
+		</details>
+		<details open>
+			<summary><h4>Room device settings</h4></summary>
+			<JSONView data={room.localPreferenceCache}/>
+		</details>
 	</div>
 }
 
 const SettingsView = ({ room }: SettingsViewProps) => {
 	const client = use(ClientContext)!
-	const setPref = useCallback((context: PreferenceContext, key: keyof Preferences, value: PreferenceValueType | undefined)=>  {
+	const setPref = useCallback((context: PreferenceContext, key: keyof Preferences, value: PreferenceValueType | undefined) => {
 		if (context === PreferenceContext.Account) {
 			client.rpc.setAccountData("fi.mau.gomuks.preferences", {
 				...client.store.serverPreferenceCache,
@@ -214,7 +246,7 @@ const SettingsView = ({ room }: SettingsViewProps) => {
 		<table>
 			<thead>
 				<tr>
-					<th>name</th>
+					<th>Name</th>
 					<th>Account</th>
 					<th>Device</th>
 					<th>Room (account)</th>
@@ -236,7 +268,7 @@ const SettingsView = ({ room }: SettingsViewProps) => {
 			</tbody>
 		</table>
 		<CustomCSSInput setPref={setPref} room={room} />
-		<JSONView data={room.preferences} />
+		<AppliedSettingsView room={room} />
 	</>
 }
 

@@ -131,9 +131,9 @@ func (gmx *Gomuks) InitDirectories() {
 		} else if logDir = os.Getenv("XDG_STATE_HOME"); logDir != "" {
 			gmx.LogDir = filepath.Join(logDir, "gomuks")
 		} else if runtime.GOOS == "darwin" {
-			gmx.DataDir = filepath.Join(homeDir, "Library", "Logs", "gomuks")
+			gmx.LogDir = filepath.Join(homeDir, "Library", "Logs", "gomuks")
 		} else if runtime.GOOS == "windows" {
-			gmx.DataDir = filepath.Join(gmx.CacheDir, "logs")
+			gmx.LogDir = filepath.Join(gmx.CacheDir, "logs")
 		} else {
 			gmx.LogDir = filepath.Join(homeDir, ".local", "state", "gomuks")
 		}
@@ -146,6 +146,7 @@ func (gmx *Gomuks) InitDirectories() {
 	exerrors.PanicIfNotNil(os.MkdirAll(gmx.TempDir, 0700))
 	exerrors.PanicIfNotNil(os.MkdirAll(gmx.DataDir, 0700))
 	exerrors.PanicIfNotNil(os.MkdirAll(gmx.LogDir, 0700))
+	defaultFileWriter.FileConfig.Filename = filepath.Join(gmx.LogDir, "gomuks.log")
 }
 
 func (gmx *Gomuks) SetupLog() {
