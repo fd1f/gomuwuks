@@ -48,10 +48,14 @@ const StateViewer = ({ room }: StateViewerProps) => {
         return types.map(type => <button data-state-type={type} onClick={stateTypeClick}>{type}</button>)
     case "state-key":
         const keys: string[] = []
-        for (const [key] of room.state.get(stateType) ?? []) { // ?? [] makes the rest pointless, TODO short circuit lol
+        const keyMap = room.state.get(stateType)
+        if (!keyMap) {
+            return <p>nothing here</p>
+        }
+        for (const [key] of  keyMap) { // ?? [] makes the rest pointless, TODO short circuit lol
             keys.push(key)
         }
-        return keys.map(type => <button data-state-key={type} onClick={stateKeyClick}>{type}</button>)
+        return keys.map(key => <button data-state-key={key} onClick={stateKeyClick}>{key == "" ? "<empty>" : key}</button>)
     case "state-event":
         const content = room.getStateEvent(stateType, stateKey)
         return <JSONView data={content}/>
