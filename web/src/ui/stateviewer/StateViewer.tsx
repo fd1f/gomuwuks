@@ -1,64 +1,92 @@
 import { RoomStateStore } from "@/api/statestore"
-import { useState } from "react"
+import { useState, use } from "react"
+import { EventType } from "@/api/types"
 import JSONView from "../util/JSONView"
+import ClientContext from "../ClientContext"
 
 interface StateViewerProps {
     room: RoomStateStore
 }
 
-// 1. you go in the state viewer, it shows buttons with each state event type
-// 2. you click a button, it shows the state keys for that type
-// 3. you click a state key, it shows a JSONView of the event
+interface StatePageProps {
+    room: RoomStateStore,
+    onClick?: (evt: React.MouseEvent<HTMLButtonElement>) => void,
+    eventType?: EventType,
+    stateKey?: string
+}
+
+interface StateState {
+    page: "all" | "type" | "event",
+    eventType?: EventType,
+    stateKey?: string
+}
+
+
+const StateAll = ({ room, onClick }: StatePageProps) => {
+    const types: string[] = []
+    for (const [type] of room.state) {
+        types.push(type)
+    }
+    return types.map(type => <button data-state-type={type} onClick={onClick}>{type}</button>)
+}
+
+const StateType = ({ room, onClick, eventType }: StatePageProps) => {
+    if (eventType == null) {
+        return
+    }
+    const keysMap = room.state.get(eventType)
+    if (keysMap == null) {
+        return
+    }
+    const keys: string[] = []
+    for (const [key] of keysMap) {
+        keys.push(key)
+    }
+    return keys.map(key => <button data-state-key={key} onClick={onClick}>{key.length == 0 ? "<empty>" : key}</button>)
+}
+
+const StateEvent = ({ room, eventType, stateKey }: StatePageProps) => {
+    if (eventType == undefined || stateKey == undefined) {
+        return
+    }
+    const content = room.getStateEvent(eventType, stateKey)
+    return <JSONView data={content}/>
+}
 
 const StateViewer = ({ room }: StateViewerProps) => {
-    // state
-    const [page, setPage] = useState("state-type")
-    const [stateType, setStateType] = useState("")
-    const [stateKey, setStateKey] = useState("")
-    // button actions
-    // 1
-    const stateTypeClick = (evt: React.MouseEvent<HTMLButtonElement>) => {
+    const [state, setState] = useState({page: "all"} as StateState)
+    const client = use(ClientContext)
+    client?.loadRoomState(room.roomID, { omitMembers: false, refetch: true })
+    const onClickAll = (evt: React.MouseEvent<HTMLButtonElement>) => {
         const type = evt.currentTarget.getAttribute("data-state-type")
         if (type == null) {
             return
         }
-        console.log(room.state.get(type))
-        // progress to 2
-        setStateType(type)
-        setPage("state-key")
+        setState({
+            page: "type",
+            eventType: type
+        })
     }
-    // 2
-    const stateKeyClick = (evt: React.MouseEvent<HTMLButtonElement>) => {
+
+    const onClickType = (evt: React.MouseEvent<HTMLButtonElement>) => {
         const key = evt.currentTarget.getAttribute("data-state-key")
         if (key == null) {
             return
         }
-        // progress to 3
-        setStateKey(key)
-        setPage("state-event")
+        setState({
+            page: "event",
+            eventType: state.eventType,
+            stateKey: key
+        })
     }
 
-    // render 1, 2 or 3
-    switch (page) {
-    case "state-type":
-        const types: string[] = []
-        for (const [type] of room.state) {
-            types.push(type)
-        }
-        return types.map(type => <button data-state-type={type} onClick={stateTypeClick}>{type}</button>)
-    case "state-key":
-        const keys: string[] = []
-        const keyMap = room.state.get(stateType)
-        if (!keyMap) {
-            return <p>nothing here</p>
-        }
-        for (const [key] of keyMap) {
-            keys.push(key)
-        }
-        return keys.map(key => <button data-state-key={key} onClick={stateKeyClick}>{key == "" ? "<empty>" : key}</button>)
-    case "state-event":
-        const content = room.getStateEvent(stateType, stateKey)
-        return <JSONView data={content}/>
+    switch (state.page) {
+    case "all":
+        return <StateAll room={room} onClick={onClickAll}/>
+    case "type":
+        return <StateType room={room} onClick={onClickType} eventType={state.eventType}/>
+    case "event":
+        return <StateEvent room={room} eventType={state.eventType} stateKey={state.stateKey}/>
     }
 }
 
