@@ -52,7 +52,7 @@ const StateViewer = ({ room }: StateViewerProps) => {
         if (!keyMap) {
             return <p>nothing here</p>
         }
-        for (const [key] of  keyMap) { // ?? [] makes the rest pointless, TODO short circuit lol
+        for (const [key] of keyMap) {
             keys.push(key)
         }
         return keys.map(key => <button data-state-key={key} onClick={stateKeyClick}>{key == "" ? "<empty>" : key}</button>)
