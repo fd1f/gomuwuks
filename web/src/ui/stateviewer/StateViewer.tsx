@@ -19,7 +19,7 @@ const StateViewer = ({ room }: StateViewerProps) => {
     // 1
     const stateTypeClick = (evt: React.MouseEvent<HTMLButtonElement>) => {
         const type = evt.currentTarget.getAttribute("data-state-type")
-        if (!type) {
+        if (type == null) {
             return
         }
         console.log(room.state.get(type))
@@ -30,7 +30,7 @@ const StateViewer = ({ room }: StateViewerProps) => {
     // 2
     const stateKeyClick = (evt: React.MouseEvent<HTMLButtonElement>) => {
         const key = evt.currentTarget.getAttribute("data-state-key")
-        if (!key) {
+        if (key == null) {
             return
         }
         // progress to 3
