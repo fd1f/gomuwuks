@@ -3,6 +3,7 @@ import { useState, use } from "react"
 import { EventType } from "@/api/types"
 import JSONView from "../util/JSONView"
 import ClientContext from "../ClientContext"
+import useEvent from "@/util/useEvent"
 
 interface StateViewerProps {
     room: RoomStateStore
@@ -27,7 +28,7 @@ const StateAll = ({ room, onClick }: StatePageProps) => {
     for (const [type] of room.state) {
         types.push(type)
     }
-    return types.map(type => <button data-state-type={type} onClick={onClick}>{type}</button>)
+    return types.map(type => <button data-event-type={type} onClick={onClick}>{type}</button>)
 }
 
 const StateType = ({ room, onClick, eventType }: StatePageProps) => {
@@ -35,11 +36,8 @@ const StateType = ({ room, onClick, eventType }: StatePageProps) => {
         return
     }
     const keysMap = room.state.get(eventType)
-    if (keysMap == null) {
-        return
-    }
     const keys: string[] = []
-    for (const [key] of keysMap) {
+    for (const [key] of keysMap ?? []) {
         keys.push(key)
     }
     return keys.map(key => <button data-state-key={key} onClick={onClick}>{key.length == 0 ? "<empty>" : key}</button>)
@@ -57,8 +55,8 @@ const StateViewer = ({ room }: StateViewerProps) => {
     const [state, setState] = useState({page: "all"} as StateState)
     const client = use(ClientContext)
     client?.loadRoomState(room.roomID, { omitMembers: false, refetch: true })
-    const onClickAll = (evt: React.MouseEvent<HTMLButtonElement>) => {
-        const type = evt.currentTarget.getAttribute("data-state-type")
+    const onClickAll = useEvent((evt: React.MouseEvent<HTMLButtonElement>) => {
+        const type = evt.currentTarget.getAttribute("data-event-type")
         if (type == null) {
             return
         }
@@ -66,9 +64,9 @@ const StateViewer = ({ room }: StateViewerProps) => {
             page: "type",
             eventType: type
         })
-    }
+    })
 
-    const onClickType = (evt: React.MouseEvent<HTMLButtonElement>) => {
+    const onClickType = useEvent((evt: React.MouseEvent<HTMLButtonElement>) => {
         const key = evt.currentTarget.getAttribute("data-state-key")
         if (key == null) {
             return
@@ -78,7 +76,7 @@ const StateViewer = ({ room }: StateViewerProps) => {
             eventType: state.eventType,
             stateKey: key
         })
-    }
+    })
 
     switch (state.page) {
     case "all":
