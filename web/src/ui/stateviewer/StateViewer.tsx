@@ -54,7 +54,9 @@ const StateEvent = ({ room, eventType, stateKey }: StatePageProps) => {
 const StateViewer = ({ room }: StateViewerProps) => {
     const [state, setState] = useState({page: "all"} as StateState)
     const client = use(ClientContext)
-    client?.loadRoomState(room.roomID, { omitMembers: false, refetch: true })
+    if (!room.stateLoaded) {
+        client?.loadRoomState(room.roomID, { omitMembers: false, refetch: true })
+    }
     const onClickAll = useEvent((evt: React.MouseEvent<HTMLButtonElement>) => {
         const type = evt.currentTarget.getAttribute("data-event-type")
         if (type == null) {
