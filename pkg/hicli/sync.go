@@ -39,6 +39,28 @@ type syncContext struct {
 	evt *SyncComplete
 }
 
+func (h *HiClient) markSyncErrored(err error) {
+	stat := &SyncStatus{
+		Type:       SyncStatusErrored,
+		Error:      err.Error(),
+		ErrorCount: h.syncErrors,
+		LastSync:   jsontime.UM(h.lastSync),
+	}
+	h.SyncStatus.Store(stat)
+	h.EventHandler(stat)
+}
+
+var (
+	syncOK      = &SyncStatus{Type: SyncStatusOK}
+	syncWaiting = &SyncStatus{Type: SyncStatusWaiting}
+)
+
+func (h *HiClient) markSyncOK() {
+	if h.SyncStatus.Swap(syncOK) != syncOK {
+		h.EventHandler(syncOK)
+	}
+}
+
 func (h *HiClient) preProcessSyncResponse(ctx context.Context, resp *mautrix.RespSync, since string) error {
 	log := zerolog.Ctx(ctx)
 	postponedToDevices := resp.ToDevice.Events[:0]
@@ -431,7 +453,7 @@ func (h *HiClient) calculateLocalContent(ctx context.Context, dbEvt *database.Ev
 	return nil, nil
 }
 
-const CurrentHTMLSanitizerVersion = 7
+const CurrentHTMLSanitizerVersion = 8
 
 func (h *HiClient) ReprocessExistingEvent(ctx context.Context, evt *database.Event) {
 	if (evt.Type != event.EventMessage.Type && evt.DecryptedType != event.EventMessage.Type) ||
