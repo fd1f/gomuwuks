@@ -4,6 +4,7 @@ import { EventType } from "@/api/types"
 import JSONView from "../util/JSONView"
 import ClientContext from "../ClientContext"
 import useEvent from "@/util/useEvent"
+import BackIcon from "@/icons/back.svg?react"
 
 interface StateViewerProps {
     room: RoomStateStore
@@ -21,7 +22,6 @@ interface StateState {
     eventType?: EventType,
     stateKey?: string
 }
-
 
 const StateAll = ({ room, onClick }: StatePageProps) => {
     const types: string[] = []
@@ -80,14 +80,39 @@ const StateViewer = ({ room }: StateViewerProps) => {
         })
     })
 
+    const onClickBack = useEvent(() => {
+        switch (state.page) {
+        case "type":
+            setState({
+                page: "all"
+            })
+            return
+        case "event":
+            setState({
+                page: "type",
+                eventType: state.eventType
+            })
+            return
+        }
+    })
+
+    let content = <></>
     switch (state.page) {
     case "all":
-        return <StateAll room={room} onClick={onClickAll}/>
+        content = <StateAll room={room} onClick={onClickAll}/>
+        break
     case "type":
-        return <StateType room={room} onClick={onClickType} eventType={state.eventType}/>
+        content = <StateType room={room} onClick={onClickType} eventType={state.eventType}/>
+        break
     case "event":
-        return <StateEvent room={room} eventType={state.eventType} stateKey={state.stateKey}/>
+        content = <StateEvent room={room} eventType={state.eventType} stateKey={state.stateKey}/>
+        break
     }
+    return <>
+        <h3>Explore room state</h3>
+        {content}
+        {state.page != "all" && <button onClick={onClickBack}><BackIcon/></button>}
+    </>
 }
 
 export default StateViewer

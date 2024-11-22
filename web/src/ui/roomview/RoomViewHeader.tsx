@@ -79,9 +79,9 @@ const RoomViewHeader = ({ room }: RoomViewHeaderProps) => {
 				title="Room Members"
 			><PeopleIcon/></button>
 			<button
-				title="View room state"
+				title="Explore room state"
 				onClick={openStateViewer}
-			>🤨</button>
+			>s</button>
 			<button title="Room Settings" onClick={openSettings}><SettingsIcon/></button>
 		</div>
 	</div>
