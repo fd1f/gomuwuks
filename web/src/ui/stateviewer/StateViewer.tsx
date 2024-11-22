@@ -4,7 +4,6 @@ import { EventType } from "@/api/types"
 import JSONView from "../util/JSONView"
 import ClientContext from "../ClientContext"
 import useEvent from "@/util/useEvent"
-import BackIcon from "@/icons/back.svg?react"
 
 interface StateViewerProps {
     room: RoomStateStore
@@ -111,7 +110,7 @@ const StateViewer = ({ room }: StateViewerProps) => {
     return <>
         <h3>Explore room state</h3>
         {content}
-        {state.page != "all" && <button onClick={onClickBack}><BackIcon/></button>}
+        {state.page != "all" && <button onClick={onClickBack}>Back</button>}
     </>
 }
 
