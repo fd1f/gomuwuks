@@ -56,6 +56,21 @@ div.settings-view {
 			font-family: var(--monospace-font-stack);
 		}
 
+		> div.vscode-wrapper {
+			position: fixed;
+			inset: 0;
+			z-index: 10;
+			background-color: var(--background-color);
+
+			> div.loader {
+				position: absolute;
+				inset: 0;
+				display: flex;
+				justify-content: center;
+				align-items: center;
+			}
+		}
+
 		> div.buttons {
 			display: flex;
 			justify-content: right;
@@ -73,13 +88,17 @@ div.settings-view {
 		}
 	}
 
-	button.logout {
-		margin-top: 1rem;
+	> div.misc-buttons > button {
 		padding: .5rem 1rem;
+		display: block;
 
-		&:hover, &:focus {
-			background-color: var(--error-color);
-			color: var(--inverted-text-color);
+		&.logout {
+			margin-top: 2rem;
+
+			&:hover, &:focus {
+				background-color: var(--error-color);
+				color: var(--inverted-text-color);
+			}
 		}
 	}
 }

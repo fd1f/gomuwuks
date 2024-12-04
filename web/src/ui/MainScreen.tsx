@@ -19,6 +19,7 @@ import Client from "@/api/client.ts"
 import { RoomStateStore } from "@/api/statestore"
 import type { RoomID } from "@/api/types"
 import { useEventAsState } from "@/util/eventdispatcher.ts"
+import { parseMatrixURI } from "@/util/validation.ts"
 import ClientContext from "./ClientContext.ts"
 import MainScreenContext, { MainScreenContextFields } from "./MainScreenContext.ts"
 import StylePreferences from "./StylePreferences.tsx"
@@ -61,6 +62,9 @@ class ContextFields implements MainScreenContextFields {
 	}
 
 	setRightPanel = (props: RightPanelProps | null, pushState = true) => {
+		if ((props?.type === "members" || props?.type === "pinned-messages") && !this.client.store.activeRoomID) {
+			props = null
+		}
 		const isEqual = objectIsEqual(this.currentRightPanel, props)
 		if (isEqual && !pushState) {
 			return
@@ -112,6 +116,11 @@ class ContextFields implements MainScreenContextFields {
 		if (pushState) {
 			history.pushState({ room_id: roomID }, "")
 		}
+		let roomNameForTitle = room?.meta.current.name
+		if (roomNameForTitle && roomNameForTitle.length > 48) {
+			roomNameForTitle = roomNameForTitle.slice(0, 45) + "…"
+		}
+		document.title = roomNameForTitle ? `${roomNameForTitle} - gomuks web` : "gomuks web"
 	}
 
 	clickRoom = (evt: React.MouseEvent) => {
@@ -140,6 +149,43 @@ class ContextFields implements MainScreenContextFields {
 
 const SYNC_ERROR_HIDE_DELAY = 30 * 1000
 
+const handleURLHash = (client: Client, context: ContextFields) => {
+	if (!location.hash.startsWith("#/uri/")) {
+		return
+	}
+	const decodedURI = decodeURIComponent(location.hash.slice("#/uri/".length))
+	const uri = parseMatrixURI(decodedURI)
+	if (!uri) {
+		console.error("Invalid matrix URI", decodedURI)
+		return
+	}
+	console.log("Handling URI", uri)
+	const newURL = new URL(location.href)
+	newURL.hash = ""
+	if (uri.identifier.startsWith("@")) {
+		const right_panel = {
+			type: "user",
+			userID: uri.identifier,
+		} as RightPanelProps
+		history.replaceState({ right_panel }, "", newURL.toString())
+		context.setRightPanel(right_panel, false)
+	} else if (uri.identifier.startsWith("!")) {
+		history.replaceState({ room_id: uri.identifier }, "", newURL.toString())
+		context.setActiveRoom(uri.identifier, false)
+	} else if (uri.identifier.startsWith("#")) {
+		// TODO loading indicator or something for this?
+		client.rpc.resolveAlias(uri.identifier).then(
+			res => {
+				history.replaceState({ room_id: res.room_id }, "", newURL.toString())
+				context.setActiveRoom(res.room_id, false)
+			},
+			err => window.alert(`Failed to resolve room alias ${uri.identifier}: ${err}`),
+		)
+	} else {
+		console.error("Invalid matrix URI", uri)
+	}
+}
+
 const MainScreen = () => {
 	const [activeRoom, directSetActiveRoom] = useState<RoomStateStore | null>(null)
 	const [rightPanel, directSetRightPanel] = useState<RightPanelProps | null>(null)
@@ -161,7 +207,20 @@ const MainScreen = () => {
 			context.setRightPanel(evt.state?.right_panel ?? null, false)
 		}
 		window.addEventListener("popstate", listener)
-		return () => window.removeEventListener("popstate", listener)
+		const initHandle = () => {
+			listener({ state: history.state } as PopStateEvent)
+			handleURLHash(client, context)
+		}
+		let cancel = () => {}
+		if (client.initComplete.current) {
+			initHandle()
+		} else {
+			cancel = client.initComplete.once(initHandle)
+		}
+		return () => {
+			window.removeEventListener("popstate", listener)
+			cancel()
+		}
 	}, [context, client])
 	useEffect(() => context.keybindings.listen(), [context])
 	useInsertionEffect(() => {
@@ -223,6 +282,7 @@ const MainScreen = () => {
 						rightPanelResizeHandle={resizeHandle2}
 					/>
 					: rightPanel && <>
+						<div className="room-view placeholder"/>
 						{resizeHandle2}
 						{rightPanel && <RightPanel {...rightPanel}/>}
 					</>}

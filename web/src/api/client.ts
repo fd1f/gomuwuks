@@ -13,6 +13,7 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
+import type { MouseEvent } from "react"
 import { CachedEventDispatcher, NonNullCachedEventDispatcher } from "../util/eventdispatcher.ts"
 import RPCClient, { SendMessageParams } from "./rpc.ts"
 import { RoomStateStore, StateStore } from "./statestore"
@@ -33,6 +34,7 @@ import type {
 export default class Client {
 	readonly state = new CachedEventDispatcher<ClientState>()
 	readonly syncStatus = new NonNullCachedEventDispatcher<SyncStatus>({ type: "waiting", error_count: 0 })
+	readonly initComplete = new NonNullCachedEventDispatcher<boolean>(false)
 	readonly store = new StateStore()
 	#stateRequests: RoomStateGUID[] = []
 	#stateRequestQueued = false
@@ -66,8 +68,20 @@ export default class Client {
 		}
 		console.log("Successfully authenticated, connecting to websocket")
 		this.rpc.start()
-		Notification.requestPermission()
-			.then(permission => console.log("Notification permission:", permission))
+		this.requestNotificationPermission()
+	}
+
+	requestNotificationPermission = (evt?: MouseEvent) => {
+		window.Notification?.requestPermission().then(permission => {
+			console.log("Notification permission:", permission)
+			if (evt) {
+				window.alert(`Notification permission: ${permission}`)
+			}
+		})
+	}
+
+	registerURIHandler = () => {
+		navigator.registerProtocolHandler("matrix", "#/uri/%s")
 	}
 
 	start(): () => void {
@@ -92,6 +106,8 @@ export default class Client {
 			this.state.emit(ev.data)
 		} else if (ev.command === "sync_status") {
 			this.syncStatus.emit(ev.data)
+		} else if (ev.command === "init_complete") {
+			this.initComplete.emit(true)
 		} else if (ev.command === "sync_complete") {
 			this.store.applySync(ev.data)
 		} else if (ev.command === "events_decrypted") {
@@ -304,9 +320,16 @@ export default class Client {
 		}
 	}
 
-	async logout() {
-		await this.rpc.logout()
+	clearState() {
+		this.initComplete.emit(false)
+		this.syncStatus.emit({ type: "waiting", error_count: 0 })
+		this.state.clearCache()
 		localStorage.clear()
 		this.store.clear()
+	}
+
+	async logout() {
+		await this.rpc.logout()
+		this.clearState()
 	}
 }

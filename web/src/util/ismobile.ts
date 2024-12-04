@@ -13,14 +13,4 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
-package web
-
-import (
-	"embed"
-)
-
-//go:generate npm install
-//go:generate npm run build
-//go:embed dist
-var Frontend embed.FS
+export const isMobileDevice = window.ontouchstart !== undefined && window.innerWidth < 800

@@ -14,70 +14,102 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import { use, useEffect, useState } from "react"
-import { PuffLoader } from "react-spinners"
+import { PuffLoader, ScaleLoader } from "react-spinners"
+import Client from "@/api/client.ts"
 import { getAvatarURL } from "@/api/media.ts"
-import { useRoomState } from "@/api/statestore"
-import { MemberEventContent, UserID, UserProfile } from "@/api/types"
-import { getDisplayname } from "@/util/validation.ts"
+import { RoomStateStore, useRoomState } from "@/api/statestore"
+import { MemberEventContent, ProfileView, UserID } from "@/api/types"
+import { getLocalpart } from "@/util/validation.ts"
 import ClientContext from "../ClientContext.ts"
-import { LightboxContext, OpenLightboxType } from "../modal/Lightbox.tsx"
+import { LightboxContext } from "../modal/Lightbox.tsx"
 import { RoomContext } from "../roomview/roomcontext.ts"
+import DeviceList from "./UserInfoDeviceList.tsx"
+import MutualRooms from "./UserInfoMutualRooms.tsx"
+import ErrorIcon from "@/icons/error.svg?react"
 
 interface UserInfoProps {
 	userID: UserID
 }
 
 const UserInfo = ({ userID }: UserInfoProps) => {
+	const client = use(ClientContext)!
 	const roomCtx = use(RoomContext)
 	const openLightbox = use(LightboxContext)!
 	const memberEvt = useRoomState(roomCtx?.store, "m.room.member", userID)
+	const member = (memberEvt?.content ?? null) as MemberEventContent | null
 	if (!memberEvt) {
 		use(ClientContext)?.requestMemberEvent(roomCtx?.store, userID)
 	}
-	const memberEvtContent = memberEvt?.content as MemberEventContent
-	if (!memberEvtContent) {
-		return <NonMemberInfo userID={userID}/>
-	}
-	return renderUserInfo({ userID, profile: memberEvtContent, error: null, openLightbox })
-}
-
-const NonMemberInfo = ({ userID }: UserInfoProps) => {
-	const openLightbox = use(LightboxContext)!
-	const client = use(ClientContext)!
-	const [profile, setProfile] = useState<UserProfile | null>(null)
-	const [error, setError] = useState<unknown>(null)
+	const [view, setView] = useState<ProfileView | null>(null)
+	const [errors, setErrors] = useState<string[]>([])
 	useEffect(() => {
-		client.rpc.getProfile(userID).then(setProfile, setError)
-	}, [userID, client])
-	return renderUserInfo({ userID, profile, error, openLightbox })
-}
+		setErrors([])
+		setView(null)
+		client.rpc.getProfileView(roomCtx?.store.roomID, userID).then(
+			resp => {
+				setView(resp)
+				setErrors(resp.errors)
+			},
+			err => setErrors([`${err}`]),
+		)
+	}, [roomCtx, userID, client])
 
-interface RenderUserInfoParams {
-	userID: UserID
-	profile: UserProfile | null
-	error: unknown
-	openLightbox: OpenLightboxType
-}
-
-function renderUserInfo({ userID, profile, error, openLightbox }: RenderUserInfoParams) {
-	const displayname = getDisplayname(userID, profile)
+	const displayname = member?.displayname || view?.global_profile?.displayname || getLocalpart(userID)
 	return <>
 		<div className="avatar-container">
-			{profile === null && error === null ? <PuffLoader
+			{member === null && view === null && !errors.length ? <PuffLoader
 				color="var(--primary-color)"
 				size="100%"
 				className="avatar-loader"
 			/> : <img
 				className="avatar"
-				src={getAvatarURL(userID, profile)}
+				src={getAvatarURL(userID, member ?? view?.global_profile)}
 				onClick={openLightbox}
 				alt=""
 			/>}
 		</div>
 		<div className="displayname" title={displayname}>{displayname}</div>
 		<div className="userid" title={userID}>{userID}</div>
-		{error ? <div className="error">{`${error}`}</div> : null}
+		<hr/>
+		{renderFullInfo(client, roomCtx?.store, view, !!errors.length)}
+		{renderErrors(errors)}
 	</>
 }
+
+function renderErrors(errors: string[]) {
+	if (!errors.length) {
+		return null
+	}
+	return <div className="errors">{errors.map((err, i) => <div className="error" key={i}>
+		<div className="icon"><ErrorIcon /></div>
+		<p>{err}</p>
+	</div>)}</div>
+}
+
+function renderFullInfo(
+	client: Client,
+	room: RoomStateStore | undefined,
+	view: ProfileView | null,
+	hasErrors: boolean,
+) {
+	if (view === null) {
+		if (hasErrors) {
+			return null
+		}
+		return <>
+			<div className="full-info-loading">
+				Loading full profile
+				<ScaleLoader color="var(--primary-color)"/>
+			</div>
+			<hr/>
+		</>
+	}
+	return <>
+		{view.mutual_rooms && <MutualRooms client={client} rooms={view.mutual_rooms}/>}
+		<DeviceList view={view} room={room}/>
+	</>
+}
+
+
 
 export default UserInfo
