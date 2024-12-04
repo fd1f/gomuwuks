@@ -53,6 +53,7 @@ export class ErrorResponse extends Error {
 export interface SendMessageParams {
 	room_id: RoomID
 	base_content?: MessageEventContent
+	extra?: Record<string, unknown>
 	text: string
 	media_path?: string
 	relates_to?: RelatesTo
@@ -128,12 +129,20 @@ export default abstract class RPCClient {
 		}, this.cancelRequest.bind(this, request_id))
 	}
 
+	logout(): Promise<boolean> {
+		return this.request("logout", {})
+	}
+
 	sendMessage(params: SendMessageParams): Promise<RawDBEvent> {
 		return this.request("send_message", params)
 	}
 
 	sendEvent(room_id: RoomID, type: EventType, content: unknown): Promise<RawDBEvent> {
 		return this.request("send_event", { room_id, type, content })
+	}
+
+	resendEvent(transaction_id: string): Promise<RawDBEvent> {
+		return this.request("resend_event", { transaction_id })
 	}
 
 	reportEvent(room_id: RoomID, event_id: EventID, reason: string): Promise<boolean> {

@@ -40,7 +40,14 @@ div.member-body {
 		display: flex;
 		align-items: center;
 		gap: .25rem;
+		text-wrap: nowrap;
 	}
+}
+
+div.room-avatar-body {
+	display: flex;
+	align-items: center;
+	gap: .25rem;
 }
 
 div.message-text {
@@ -96,6 +103,18 @@ div.html-body {
 		height: 1.5rem;
 		width: auto;
 		max-width: 5rem;
+	}
+
+	span.spoiler-reason {
+		font-size: .8em;
+		color: var(--secondary-text-color);
+
+		&::before {
+			content: "(";
+		}
+		&::after {
+			content: ") ";
+		}
 	}
 
 	span.hicli-spoiler {
@@ -180,9 +199,39 @@ div.html-body {
 }
 
 div.media-container {
-	&.video-container {
+	> div.placeholder {
+		position: relative;
 		width: 100%;
-		height: 240px;
+		height: 100%;
+
+		> div.empty-placeholder {
+			background-color: var(--media-placeholder-default-background);
+			width: 100%;
+			height: 100%;
+		}
+
+		> div.placeholder-reason, > div.placeholder-spinner {
+			position: absolute;
+			top: 50%;
+			left: 50%;
+			transform: translate(-50%, -50%);
+		}
+
+		> div.placeholder-reason {
+			background-color: var(--media-placeholder-button-background);
+			padding: 0.5rem;
+			cursor: var(--clickable-cursor);
+			user-select: none;
+			border-radius: .25rem;
+		}
+
+		& + img {
+			/* In order loading=lazy to work, the image has to be visible,
+			   so put it behind the placeholder instead of below */
+			position: absolute;
+			top: 0;
+			z-index: -1;
+		}
 	}
 
 	> a {
@@ -192,13 +241,31 @@ div.media-container {
 		color: inherit;
 	}
 
-	> img {
+	> img, > video {
 		max-width: 100%;
 		max-height: 100%;
 	}
-	> video {
-		min-width: 320px;
-		max-width: 100%;
-		height: 100%;
+}
+
+iframe.location-container.google {
+	height: 25rem;
+	width: 100%;
+	max-width: 50rem;
+	border: none;
+}
+
+div.location-container.leaflet {
+	height: 25rem;
+	max-width: 50rem;
+
+	> div {
+		height: 25rem;
+		width: 100%;
 	}
+}
+
+div.location-importer {
+	display: flex;
+	justify-content: center;
+	align-items: center;
 }

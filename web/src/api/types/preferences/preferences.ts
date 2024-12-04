@@ -26,8 +26,12 @@ export const codeBlockStyles = [
 	"solarized-dark", "solarized-light", "swapoff", "tango", "tokyonight-day", "tokyonight-moon", "tokyonight-night",
 	"tokyonight-storm", "trac", "vim", "vs", "vulcan", "witchhazel", "xcode-dark", "xcode",
 ] as const
+export const mapProviders = ["leaflet", "google", "none"] as const
+export const gifProviders = ["giphy", "tenor"] as const
 
 export type CodeBlockStyle = typeof codeBlockStyles[number]
+export type MapProvider = typeof mapProviders[number]
+export type GIFProvider = typeof gifProviders[number]
 
 /* eslint-disable max-len */
 export const preferences = {
@@ -40,6 +44,12 @@ export const preferences = {
 	send_typing_notifications: new Preference<boolean>({
 		displayName: "Send typing notifications",
 		description: "Should typing notifications be sent to other users?",
+		allowedContexts: anyContext,
+		defaultValue: true,
+	}),
+	show_media_previews: new Preference<boolean>({
+		displayName: "Show image and video previews",
+		description: "If disabled, images and videos will only be visible after clicking and will not be downloaded automatically.",
 		allowedContexts: anyContext,
 		defaultValue: true,
 	}),
@@ -98,6 +108,33 @@ export const preferences = {
 		allowedContexts: anyContext,
 		defaultValue: true,
 	}),
+	map_provider: new Preference<MapProvider>({
+		displayName: "Map provider",
+		description: "The map provider to use for location messages.",
+		allowedValues: mapProviders,
+		allowedContexts: anyContext,
+		defaultValue: "leaflet",
+	}),
+	leaflet_tile_template: new Preference<string>({
+		displayName: "Leaflet tile URL template",
+		description: "When using Leaflet for maps, the URL template for map tile images.",
+		allowedContexts: anyContext,
+		defaultValue: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+	}),
+	gif_provider: new Preference<GIFProvider>({
+		displayName: "GIF provider",
+		description: "The service to use to search for GIFs",
+		allowedValues: gifProviders,
+		allowedContexts: anyContext,
+		defaultValue: "giphy",
+	}),
+	// TODO implement
+	// reupload_gifs: new Preference<boolean>({
+	// 	displayName: "Reupload GIFs",
+	// 	description: "Should GIFs be reuploaded to your server's media repo instead of using the proxy?",
+	// 	allowedContexts: anyContext,
+	// 	defaultValue: false,
+	// }),
 	custom_notification_sound: new Preference<ContentURI>({
 		displayName: "Custom notification sound",
 		description: "The mxc:// URI to a custom notification sound.",

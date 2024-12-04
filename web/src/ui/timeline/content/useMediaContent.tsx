@@ -13,29 +13,35 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
-import { CSSProperties, use } from "react"
+import React, { CSSProperties, JSX, use } from "react"
 import { getEncryptedMediaURL, getMediaURL } from "@/api/media.ts"
 import type { EventType, MediaMessageEventContent } from "@/api/types"
-import { ImageContainerSize, calculateMediaSize } from "@/util/mediasize.ts"
+import { ImageContainerSize, calculateMediaSize, defaultVideoContainerSize } from "@/util/mediasize.ts"
 import { LightboxContext } from "../../modal/Lightbox.tsx"
 import DownloadIcon from "@/icons/download.svg?react"
 
 export const useMediaContent = (
-	content: MediaMessageEventContent, evtType: EventType, containerSize?: ImageContainerSize,
-): [React.ReactElement | null, string, CSSProperties] => {
+	content: MediaMessageEventContent,
+	evtType: EventType,
+	containerSize?: ImageContainerSize,
+	onLoad?: () => void,
+): [JSX.Element | null, string, CSSProperties] => {
 	const mediaURL = content.file?.url ? getEncryptedMediaURL(content.file.url) : getMediaURL(content.url)
 	const thumbnailURL = content.info?.thumbnail_file?.url
 		? getEncryptedMediaURL(content.info.thumbnail_file.url) : getMediaURL(content.info?.thumbnail_url)
 	if (content.msgtype === "m.image" || evtType === "m.sticker") {
 		const style = calculateMediaSize(content.info?.w, content.info?.h, containerSize)
 		return [<img
+			onLoad={onLoad}
 			loading="lazy"
 			style={style.media}
 			src={mediaURL}
 			alt={content.filename ?? content.body}
+			title={content.filename ?? content.body}
 			onClick={use(LightboxContext)}
 		/>, "image-container", style.container]
 	} else if (content.msgtype === "m.video") {
+		const style = calculateMediaSize(content.info?.w, content.info?.h, containerSize ?? defaultVideoContainerSize)
 		const autoplay = false
 		const controls = !content.info?.["fi.mau.hide_controls"]
 		const loop = !!content.info?.["fi.mau.loop"]
@@ -51,6 +57,7 @@ export const useMediaContent = (
 		return [<video
 			autoPlay={autoplay}
 			controls={controls}
+			style={style.media}
 			loop={loop}
 			poster={thumbnailURL}
 			onMouseOver={onMouseOver}
@@ -58,22 +65,18 @@ export const useMediaContent = (
 			preload="none"
 		>
 			<source src={mediaURL} type={content.info?.mimetype}/>
-		</video>, "video-container", {}]
+		</video>, "video-container", style.container]
 	} else if (content.msgtype === "m.audio") {
 		return [<audio controls src={mediaURL} preload="none"/>, "audio-container", {}]
 	} else if (content.msgtype === "m.file") {
-		return [
-			<>
-				<a
-					href={mediaURL}
-					target="_blank"
-					rel="noopener noreferrer"
-					download={content.filename ?? content.body}
-				><DownloadIcon height={32} width={32}/> {content.filename ?? content.body}</a>
-			</>,
-			"file-container",
-			{},
-		]
+		return [<a
+			href={mediaURL}
+			target="_blank"
+			rel="noopener noreferrer"
+			download={content.filename ?? content.body}
+		>
+			<DownloadIcon height={32} width={32}/> {content.filename ?? content.body}
+		</a>, "file-container", {}]
 	}
 	return [null, "unknown-container", {}]
 }

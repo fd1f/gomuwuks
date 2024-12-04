@@ -59,7 +59,8 @@ type Gomuks struct {
 
 	FrontendFS embed.FS
 
-	Config Config
+	Config      Config
+	DisableAuth bool
 
 	stopOnce sync.Once
 	stopChan chan struct{}
@@ -177,14 +178,16 @@ func (gmx *Gomuks) StartClient() {
 		[]byte("meow"),
 		hicli.JSONEventHandler(gmx.OnEvent).HandleEvent,
 	)
+	gmx.Client.LogoutFunc = gmx.Logout
 	httpClient := gmx.Client.Client.Client
 	httpClient.Transport.(*http.Transport).ForceAttemptHTTP2 = false
 	if !gmx.Config.Matrix.DisableHTTP2 {
-		_, err = http2.ConfigureTransports(httpClient.Transport.(*http.Transport))
+		h2, err := http2.ConfigureTransports(httpClient.Transport.(*http.Transport))
 		if err != nil {
 			gmx.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to configure HTTP/2")
 			os.Exit(13)
 		}
+		h2.ReadIdleTimeout = 30 * time.Second
 	}
 	userID, err := gmx.Client.DB.Account.GetFirstUserID(ctx)
 	if err != nil {
@@ -244,7 +247,9 @@ func (gmx *Gomuks) SubscribeEvents(closeForRestart WebsocketCloseFunc, cb func(c
 	gmx.nextListenerID++
 	id := gmx.nextListenerID
 	gmx.eventListeners[id] = cb
-	gmx.websocketClosers[id] = closeForRestart
+	if closeForRestart != nil {
+		gmx.websocketClosers[id] = closeForRestart
+	}
 	return func() {
 		gmx.eventListenersLock.Lock()
 		defer gmx.eventListenersLock.Unlock()

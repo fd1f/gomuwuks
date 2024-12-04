@@ -3,11 +3,14 @@ import { MemDBEvent } from "@/api/types"
 import ACLBody from "./ACLBody.tsx"
 import EncryptedBody from "./EncryptedBody.tsx"
 import HiddenEvent from "./HiddenEvent.tsx"
+import LocationMessageBody from "./LocationMessageBody.tsx"
 import MediaMessageBody from "./MediaMessageBody.tsx"
 import MemberBody from "./MemberBody.tsx"
 import PinnedEventsBody from "./PinnedEventsBody.tsx"
 import PowerLevelBody from "./PowerLevelBody.tsx"
 import RedactedBody from "./RedactedBody.tsx"
+import RoomAvatarBody from "./RoomAvatarBody.tsx"
+import RoomNameBody from "./RoomNameBody.tsx"
 import TextMessageBody from "./TextMessageBody.tsx"
 import UnknownMessageBody from "./UnknownMessageBody.tsx"
 import EventContentProps from "./props.ts"
@@ -18,10 +21,13 @@ export { default as ContentErrorBoundary } from "./ContentErrorBoundary.tsx"
 export { default as EncryptedBody } from "./EncryptedBody.tsx"
 export { default as HiddenEvent } from "./HiddenEvent.tsx"
 export { default as MediaMessageBody } from "./MediaMessageBody.tsx"
+export { default as LocationMessageBody } from "./LocationMessageBody.tsx"
 export { default as MemberBody } from "./MemberBody.tsx"
 export { default as PinnedEventsBody } from "./PinnedEventsBody.tsx"
 export { default as PowerLevelBody } from "./PowerLevelBody.tsx"
 export { default as RedactedBody } from "./RedactedBody.tsx"
+export { default as RoomAvatarBody } from "./RoomAvatarBody.tsx"
+export { default as RoomNameBody } from "./RoomNameBody.tsx"
 export { default as TextMessageBody } from "./TextMessageBody.tsx"
 export { default as UnknownMessageBody } from "./UnknownMessageBody.tsx"
 export type { default as EventContentProps } from "./props.ts"
@@ -49,8 +55,7 @@ export function getBodyType(evt: MemDBEvent, forReply = false): React.FunctionCo
 			}
 			return MediaMessageBody
 		case "m.location":
-			// return LocationMessageBody
-			// fallthrough
+			return LocationMessageBody
 		default:
 			return UnknownMessageBody
 		}
@@ -68,6 +73,10 @@ export function getBodyType(evt: MemDBEvent, forReply = false): React.FunctionCo
 		return EncryptedBody
 	case "m.room.member":
 		return MemberBody
+	case "m.room.name":
+		return RoomNameBody
+	case "m.room.avatar":
+		return RoomAvatarBody
 	case "m.room.server_acl":
 		return ACLBody
 	case "m.room.pinned_events":
@@ -82,6 +91,8 @@ export function isSmallEvent(bodyType: React.FunctionComponent<EventContentProps
 	switch (bodyType) {
 	case HiddenEvent:
 	case MemberBody:
+	case RoomNameBody:
+	case RoomAvatarBody:
 	case ACLBody:
 	case PinnedEventsBody:
 	case PowerLevelBody:

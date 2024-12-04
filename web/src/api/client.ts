@@ -23,6 +23,7 @@ import type {
 	EventType,
 	ImagePackRooms,
 	RPCEvent,
+	RawDBEvent,
 	RoomID,
 	RoomStateGUID,
 	SyncStatus,
@@ -35,6 +36,7 @@ export default class Client {
 	readonly store = new StateStore()
 	#stateRequests: RoomStateGUID[] = []
 	#stateRequestQueued = false
+	#gcInterval: number | undefined
 
 	constructor(readonly rpc: RPCClient) {
 		this.rpc.event.listen(this.#handleEvent)
@@ -71,9 +73,13 @@ export default class Client {
 	start(): () => void {
 		const abort = new AbortController()
 		this.#reallyStart(abort.signal)
+		this.#gcInterval = setInterval(() => {
+			console.log("Garbage collection completed:", this.store.doGarbageCollection())
+		}, window.gcSettings.interval)
 		return () => {
 			abort.abort()
 			this.rpc.stop()
+			clearInterval(this.#gcInterval)
 		}
 	}
 
@@ -150,17 +156,30 @@ export default class Client {
 		await this.rpc.setState(room.roomID, "m.room.pinned_events", "", { pinned: pinnedEvents })
 	}
 
+	async resendEvent(txnID: string): Promise<void> {
+		const dbEvent = await this.rpc.resendEvent(txnID)
+		const room = this.store.rooms.get(dbEvent.room_id)
+		room?.applyEvent(dbEvent, true)
+		room?.notifyTimelineSubscribers()
+	}
+
+	#handleOutgoingEvent(dbEvent: RawDBEvent, room: RoomStateStore) {
+		if (!room.eventsByRowID.has(dbEvent.rowid)) {
+			if (!room.pendingEvents.includes(dbEvent.rowid)) {
+				room.pendingEvents.push(dbEvent.rowid)
+			}
+			room.applyEvent(dbEvent, true)
+			room.notifyTimelineSubscribers()
+		}
+	}
+
 	async sendEvent(roomID: RoomID, type: EventType, content: unknown): Promise<void> {
 		const room = this.store.rooms.get(roomID)
 		if (!room) {
 			throw new Error("Room not found")
 		}
 		const dbEvent = await this.rpc.sendEvent(roomID, type, content)
-		if (!room.eventsByRowID.has(dbEvent.rowid)) {
-			room.pendingEvents.push(dbEvent.rowid)
-			room.applyEvent(dbEvent, true)
-			room.notifyTimelineSubscribers()
-		}
+		this.#handleOutgoingEvent(dbEvent, room)
 	}
 
 	async sendMessage(params: SendMessageParams): Promise<void> {
@@ -169,11 +188,7 @@ export default class Client {
 			throw new Error("Room not found")
 		}
 		const dbEvent = await this.rpc.sendMessage(params)
-		if (!room.eventsByRowID.has(dbEvent.rowid)) {
-			room.pendingEvents.push(dbEvent.rowid)
-			room.applyEvent(dbEvent, true)
-			room.notifyTimelineSubscribers()
-		}
+		this.#handleOutgoingEvent(dbEvent, room)
 	}
 
 	async subscribeToEmojiPack(pack: RoomStateGUID, subscribe: boolean = true) {
@@ -269,20 +284,29 @@ export default class Client {
 		const room = this.store.rooms.get(roomID)
 		if (!room) {
 			throw new Error("Room not found")
-		}
-		if (room.paginating) {
-			return
+		} else if (room.paginating) {
+			throw new Error("Already paginating")
 		}
 		room.paginating = true
 		try {
 			const oldestRowID = room.timeline[0]?.timeline_rowid
-			const resp = await this.rpc.paginate(roomID, oldestRowID ?? 0, 100)
+			// Request 50 messages at a time first, increase batch size when going further
+			const count = room.timeline.length < 100 ? 50 : 100
+			console.log("Requesting", count, "messages of history in", roomID)
+			const resp = await this.rpc.paginate(roomID, oldestRowID ?? 0, count)
 			if (room.timeline[0]?.timeline_rowid !== oldestRowID) {
 				throw new Error("Timeline changed while loading history")
 			}
+			room.hasMoreHistory = resp.has_more
 			room.applyPagination(resp.events)
 		} finally {
 			room.paginating = false
 		}
+	}
+
+	async logout() {
+		await this.rpc.logout()
+		localStorage.clear()
+		this.store.clear()
 	}
 }

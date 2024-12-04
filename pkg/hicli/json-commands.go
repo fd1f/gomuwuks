@@ -42,11 +42,15 @@ func (h *HiClient) handleJSONCommand(ctx context.Context, req *JSONCommand) (any
 		})
 	case "send_message":
 		return unmarshalAndCall(req.Data, func(params *sendMessageParams) (*database.Event, error) {
-			return h.SendMessage(ctx, params.RoomID, params.BaseContent, params.Text, params.RelatesTo, params.Mentions)
+			return h.SendMessage(ctx, params.RoomID, params.BaseContent, params.Extra, params.Text, params.RelatesTo, params.Mentions)
 		})
 	case "send_event":
 		return unmarshalAndCall(req.Data, func(params *sendEventParams) (*database.Event, error) {
 			return h.Send(ctx, params.RoomID, params.EventType, params.Content)
+		})
+	case "resend_event":
+		return unmarshalAndCall(req.Data, func(params *resendEventParams) (*database.Event, error) {
+			return h.Resend(ctx, params.TransactionID)
 		})
 	case "report_event":
 		return unmarshalAndCall(req.Data, func(params *reportEventParams) (bool, error) {
@@ -114,6 +118,11 @@ func (h *HiClient) handleJSONCommand(ctx context.Context, req *JSONCommand) (any
 		return unmarshalAndCall(req.Data, func(params *resolveAliasParams) (*mautrix.RespAliasResolve, error) {
 			return h.Client.ResolveAlias(ctx, params.Alias)
 		})
+	case "logout":
+		if h.LogoutFunc == nil {
+			return nil, errors.New("logout not supported")
+		}
+		return true, h.LogoutFunc(ctx)
 	case "login":
 		return unmarshalAndCall(req.Data, func(params *loginParams) (bool, error) {
 			return true, h.LoginPassword(ctx, params.HomeserverURL, params.Username, params.Password)
@@ -173,6 +182,7 @@ type cancelRequestParams struct {
 type sendMessageParams struct {
 	RoomID      id.RoomID                  `json:"room_id"`
 	BaseContent *event.MessageEventContent `json:"base_content"`
+	Extra       map[string]any             `json:"extra"`
 	Text        string                     `json:"text"`
 	RelatesTo   *event.RelatesTo           `json:"relates_to"`
 	Mentions    *event.Mentions            `json:"mentions"`
@@ -182,6 +192,10 @@ type sendEventParams struct {
 	RoomID    id.RoomID       `json:"room_id"`
 	EventType event.Type      `json:"type"`
 	Content   json.RawMessage `json:"content"`
+}
+
+type resendEventParams struct {
+	TransactionID string `json:"transaction_id"`
 }
 
 type reportEventParams struct {

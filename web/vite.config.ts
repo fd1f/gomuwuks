@@ -5,11 +5,13 @@ import svgr from "vite-plugin-svgr"
 export default defineConfig({
 	base: "./",
 	build: {
-		target: ["esnext", "firefox128"],
+		target: ["esnext", "firefox128", "chrome131", "safari18"],
 		rollupOptions: {
 			output: {
 				manualChunks: id => {
-					if (id.includes("node_modules") && !id.includes("katex")) {
+					if (id.includes("wailsio")) {
+						return "wails"
+					} else if (id.includes("node_modules") && !id.includes("katex") && !id.includes("leaflet")) {
 						return "vendor"
 					} else if (id.endsWith("/emoji/data.json")) {
 						return "emoji"

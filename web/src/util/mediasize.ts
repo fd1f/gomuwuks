@@ -26,6 +26,7 @@ export interface ImageContainerSize {
 }
 
 export const defaultImageContainerSize: ImageContainerSize = { width: 320, height: 240 }
+export const defaultVideoContainerSize: ImageContainerSize = { width: 400, height: 320 }
 
 export function calculateMediaSize(
 	width?: number,
@@ -38,6 +39,10 @@ export function calculateMediaSize(
 			container: {
 				width: `${imageContainerWidth}px`,
 				height: `${imageContainerHeight}px`,
+				containIntrinsicWidth: `${imageContainerWidth}px`,
+				containIntrinsicHeight: `${imageContainerHeight}px`,
+				contentVisibility: "auto",
+				contain: "strict",
 			},
 			media: {},
 		}
@@ -63,6 +68,10 @@ export function calculateMediaSize(
 		container: {
 			width: `${width}px`,
 			height: `${height}px`,
+			containIntrinsicWidth: `${width}px`,
+			containIntrinsicHeight: `${height}px`,
+			contentVisibility: "auto",
+			contain: "strict",
 		},
 		media: {
 			aspectRatio: `${origWidth} / ${origHeight}`,
