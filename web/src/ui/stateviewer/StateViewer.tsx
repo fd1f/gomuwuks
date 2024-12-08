@@ -4,6 +4,7 @@ import { EventType } from "@/api/types"
 import JSONView from "../util/JSONView"
 import ClientContext from "../ClientContext"
 import useEvent from "@/util/useEvent"
+import "./StateViewer.css"
 
 interface StateViewerProps {
     room: RoomStateStore
@@ -27,7 +28,9 @@ const StateAll = ({ room, onClick }: StatePageProps) => {
     for (const [type] of room.state) {
         types.push(type)
     }
-    return types.map(type => <button data-event-type={type} onClick={onClick}>{type}</button>)
+    return types.map(type =>
+        <button key={type} data-event-type={type} onClick={onClick}>{type}</button>
+    )
 }
 
 const StateType = ({ room, onClick, eventType }: StatePageProps) => {
@@ -39,7 +42,9 @@ const StateType = ({ room, onClick, eventType }: StatePageProps) => {
     for (const [key] of keysMap ?? []) {
         keys.push(key)
     }
-    return keys.map(key => <button data-state-key={key} onClick={onClick}>{key.length == 0 ? "<empty>" : key}</button>)
+    return keys.map(key =>
+        <button key={key} data-state-key={key} onClick={onClick}>{key.length == 0 ? "<empty>" : key}</button>
+    )
 }
 
 const StateEvent = ({ room, eventType, stateKey }: StatePageProps) => {
@@ -53,6 +58,7 @@ const StateEvent = ({ room, eventType, stateKey }: StatePageProps) => {
 const StateViewer = ({ room }: StateViewerProps) => {
     const [state, setState] = useState({page: "all"} as StateState)
     const client = use(ClientContext)
+    console.log(room.stateLoaded)
     if (!room.stateLoaded) {
         client?.loadRoomState(room.roomID, { omitMembers: false, refetch: true })
     }
@@ -109,7 +115,9 @@ const StateViewer = ({ room }: StateViewerProps) => {
     }
     return <>
         <h3>Explore room state</h3>
-        {content}
+        <div className="state-content">
+            {content}
+        </div>
         {state.page != "all" && <button onClick={onClickBack}>Back</button>}
     </>
 }
