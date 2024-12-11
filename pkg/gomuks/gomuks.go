@@ -20,13 +20,11 @@ import (
 	"context"
 	"embed"
 	"fmt"
-	"maps"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"runtime"
-	"slices"
 	"sync"
 	"syscall"
 	"time"
@@ -57,7 +55,9 @@ type Gomuks struct {
 	TempDir   string
 	LogDir    string
 
-	FrontendFS embed.FS
+	FrontendFS    embed.FS
+	indexWithETag []byte
+	frontendETag  string
 
 	Config      Config
 	DisableAuth bool
@@ -65,17 +65,12 @@ type Gomuks struct {
 	stopOnce sync.Once
 	stopChan chan struct{}
 
-	websocketClosers   map[uint64]WebsocketCloseFunc
-	eventListeners     map[uint64]func(*hicli.JSONCommand)
-	nextListenerID     uint64
-	eventListenersLock sync.RWMutex
+	EventBuffer *EventBuffer
 }
 
 func NewGomuks() *Gomuks {
 	return &Gomuks{
-		stopChan:         make(chan struct{}),
-		eventListeners:   make(map[uint64]func(*hicli.JSONCommand)),
-		websocketClosers: make(map[uint64]WebsocketCloseFunc),
+		stopChan: make(chan struct{}),
 	}
 }
 
@@ -176,7 +171,7 @@ func (gmx *Gomuks) StartClient() {
 		nil,
 		gmx.Log.With().Str("component", "hicli").Logger(),
 		[]byte("meow"),
-		hicli.JSONEventHandler(gmx.OnEvent).HandleEvent,
+		gmx.EventBuffer.HicliEventHandler,
 	)
 	gmx.Client.LogoutFunc = gmx.Logout
 	httpClient := gmx.Client.Client.Client
@@ -218,43 +213,15 @@ func (gmx *Gomuks) WaitForInterrupt() {
 }
 
 func (gmx *Gomuks) DirectStop() {
-	gmx.eventListenersLock.Lock()
-	closers := slices.Collect(maps.Values(gmx.websocketClosers))
-	gmx.eventListenersLock.Unlock()
-	for _, closer := range closers {
+	for _, closer := range gmx.EventBuffer.GetClosers() {
 		closer(websocket.StatusServiceRestart, "Server shutting down")
 	}
 	gmx.Client.Stop()
-	err := gmx.Server.Close()
-	if err != nil {
-		gmx.Log.Error().Err(err).Msg("Failed to close server")
-	}
-}
-
-func (gmx *Gomuks) OnEvent(evt *hicli.JSONCommand) {
-	gmx.eventListenersLock.RLock()
-	defer gmx.eventListenersLock.RUnlock()
-	for _, listener := range gmx.eventListeners {
-		listener(evt)
-	}
-}
-
-type WebsocketCloseFunc func(websocket.StatusCode, string)
-
-func (gmx *Gomuks) SubscribeEvents(closeForRestart WebsocketCloseFunc, cb func(command *hicli.JSONCommand)) func() {
-	gmx.eventListenersLock.Lock()
-	defer gmx.eventListenersLock.Unlock()
-	gmx.nextListenerID++
-	id := gmx.nextListenerID
-	gmx.eventListeners[id] = cb
-	if closeForRestart != nil {
-		gmx.websocketClosers[id] = closeForRestart
-	}
-	return func() {
-		gmx.eventListenersLock.Lock()
-		defer gmx.eventListenersLock.Unlock()
-		delete(gmx.eventListeners, id)
-		delete(gmx.websocketClosers, id)
+	if gmx.Server != nil {
+		err := gmx.Server.Close()
+		if err != nil {
+			gmx.Log.Error().Err(err).Msg("Failed to close server")
+		}
 	}
 }
 

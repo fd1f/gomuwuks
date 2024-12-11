@@ -17,15 +17,19 @@
 package gomuks
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
+	"io"
 	"io/fs"
 	"net/http"
 	_ "net/http/pprof"
+	"strconv"
 	"strings"
 	"time"
 
@@ -73,6 +77,25 @@ func (gmx *Gomuks) StartServer() {
 		gmx.Log.Warn().Msg("Frontend not found")
 	} else {
 		router.Handle("/", gmx.FrontendCacheMiddleware(http.FileServerFS(frontend)))
+		if gmx.Commit != "unknown" && !gmx.BuildTime.IsZero() {
+			gmx.frontendETag = fmt.Sprintf(`"%s-%s"`, gmx.Commit, gmx.BuildTime.Format(time.RFC3339))
+
+			indexFile, err := frontend.Open("index.html")
+			if err != nil {
+				gmx.Log.Err(err).Msg("Failed to open index.html")
+			} else {
+				data, err := io.ReadAll(indexFile)
+				_ = indexFile.Close()
+				if err == nil {
+					gmx.indexWithETag = bytes.Replace(
+						data,
+						[]byte("<!-- etag placeholder -->"),
+						[]byte(fmt.Sprintf(`<meta name="gomuks-frontend-etag" content="%s">`, html.EscapeString(gmx.frontendETag))),
+						1,
+					)
+				}
+			}
+		}
 	}
 	gmx.Server = &http.Server{
 		Addr:    gmx.Config.Web.ListenAddress,
@@ -88,20 +111,23 @@ func (gmx *Gomuks) StartServer() {
 }
 
 func (gmx *Gomuks) FrontendCacheMiddleware(next http.Handler) http.Handler {
-	var frontendCacheETag string
-	if gmx.Commit != "unknown" && !gmx.BuildTime.IsZero() {
-		frontendCacheETag = fmt.Sprintf(`"%s-%s"`, gmx.Commit, gmx.BuildTime.Format(time.RFC3339))
-	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("If-None-Match") == frontendCacheETag {
+		if gmx.frontendETag != "" && r.Header.Get("If-None-Match") == gmx.frontendETag {
 			w.WriteHeader(http.StatusNotModified)
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/assets/") {
 			w.Header().Set("Cache-Control", "max-age=604800, immutable")
 		}
-		if frontendCacheETag != "" {
-			w.Header().Set("ETag", frontendCacheETag)
+		if gmx.frontendETag != "" {
+			w.Header().Set("ETag", gmx.frontendETag)
+			if r.URL.Path == "/" && gmx.indexWithETag != nil {
+				w.Header().Set("Content-Type", "text/html")
+				w.Header().Set("Content-Length", strconv.Itoa(len(gmx.indexWithETag)))
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(gmx.indexWithETag)
+				return
+			}
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -223,12 +249,6 @@ func (gmx *Gomuks) Authenticate(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func isUserFetch(header http.Header) bool {
-	return header.Get("Sec-Fetch-Mode") == "navigate" &&
-		header.Get("Sec-Fetch-Dest") == "document" &&
-		header.Get("Sec-Fetch-User") == "?1"
-}
-
 func isImageFetch(header http.Header) bool {
 	return header.Get("Sec-Fetch-Site") == "cross-site" &&
 		header.Get("Sec-Fetch-Mode") == "no-cors" &&
@@ -242,17 +262,6 @@ func (gmx *Gomuks) AuthMiddleware(next http.Handler) http.Handler {
 			gmx.validateAuth(r.URL.Query().Get("image_auth"), true) &&
 			r.URL.Query().Get("encrypted") == "false" {
 			next.ServeHTTP(w, r)
-			return
-		} else if r.Header.Get("Sec-Fetch-Site") != "" &&
-			r.Header.Get("Sec-Fetch-Site") != "same-origin" &&
-			!isUserFetch(r.Header) {
-			hlog.FromRequest(r).Debug().
-				Str("site", r.Header.Get("Sec-Fetch-Site")).
-				Str("dest", r.Header.Get("Sec-Fetch-Dest")).
-				Str("mode", r.Header.Get("Sec-Fetch-Mode")).
-				Str("user", r.Header.Get("Sec-Fetch-User")).
-				Msg("Invalid Sec-Fetch-Site header")
-			ErrInvalidHeader.WithMessage("Invalid Sec-Fetch-Site header").Write(w)
 			return
 		}
 		if r.URL.Path != "/auth" {

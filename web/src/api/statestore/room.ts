@@ -78,7 +78,10 @@ export interface AutocompleteMemberEntry {
 	displayName: string
 	avatarURL?: ContentURI
 	searchString: string
+	event: MemDBEvent
 }
+
+const collator = new Intl.Collator()
 
 export class RoomStateStore {
 	readonly roomID: RoomID
@@ -87,10 +90,12 @@ export class RoomStateStore {
 	timelineCache: (MemDBEvent | null)[] = []
 	state: Map<EventType, Map<string, EventRowID>> = new Map()
 	stateLoaded = false
+	typing: UserID[] = []
 	fullMembersLoaded = false
 	readonly eventsByRowID: Map<EventRowID, MemDBEvent> = new Map()
 	readonly eventsByID: Map<EventID, MemDBEvent> = new Map()
 	readonly timelineSub = new Subscribable()
+	readonly typingSub = new Subscribable()
 	readonly stateSubs = new MultiSubscribable()
 	readonly eventSubs = new MultiSubscribable()
 	readonly requestedEvents: Set<EventID> = new Set()
@@ -103,8 +108,7 @@ export class RoomStateStore {
 	readonly localPreferenceCache: Preferences
 	readonly preferenceSub = new NoDataSubscribable()
 	serverPreferenceCache: Preferences = {}
-	#membersCache: MemDBEvent[] | null = null
-	#autocompleteMembersCache: AutocompleteMemberEntry[] | null = null
+	#membersCache: AutocompleteMemberEntry[] | null = null
 	membersRequested: boolean = false
 	#allPacksCache: Record<string, CustomEmojiPack> | null = null
 	lastOpened: number = 0
@@ -190,44 +194,34 @@ export class RoomStateStore {
 		const membersCache = memberEvtIDs.values()
 			.map(rowID => this.eventsByRowID.get(rowID))
 			.filter((evt): evt is MemDBEvent => !!evt && evt.content.membership === "join")
+			.map((evt): AutocompleteMemberEntry => ({
+				userID: evt.state_key!,
+				displayName: getDisplayname(evt.state_key!, evt.content as MemberEventContent),
+				avatarURL: evt.content?.avatar_url,
+				searchString: toSearchableString(`${evt.content?.displayname ?? ""}${evt.state_key!.slice(1)}`),
+				event: evt,
+			}))
 			.toArray()
 		membersCache.sort((a, b) => {
-			const aUserID = a.state_key as UserID
-			const bUserID = b.state_key as UserID
-			const aPower = powerLevels.users?.[aUserID] ?? powerLevels.users_default ?? 0
-			const bPower = powerLevels.users?.[bUserID] ?? powerLevels.users_default ?? 0
+			const aPower = powerLevels.users?.[a.userID] ?? powerLevels.users_default ?? 0
+			const bPower = powerLevels.users?.[b.userID] ?? powerLevels.users_default ?? 0
 			if (aPower !== bPower) {
 				return bPower - aPower
+			} else if (a.displayName === b.displayName) {
+				return a.userID.localeCompare(b.userID)
+			} else {
+				return collator.compare(a.displayName, b.displayName)
 			}
-			const aName = getDisplayname(aUserID, a.content as MemberEventContent).toLowerCase()
-			const bName = getDisplayname(bUserID, b.content as MemberEventContent).toLowerCase()
-			if (aName === bName) {
-				return aUserID.localeCompare(bUserID)
-			}
-			return aName.localeCompare(bName)
 		})
-		this.#autocompleteMembersCache = membersCache.map(evt => ({
-			userID: evt.state_key!,
-			displayName: getDisplayname(evt.state_key!, evt.content as MemberEventContent),
-			avatarURL: evt.content?.avatar_url,
-			searchString: toSearchableString(`${evt.content?.displayname ?? ""}${evt.state_key!.slice(1)}`),
-		}))
 		this.#membersCache = membersCache
 		return membersCache
 	}
 
-	getMembers = (): MemDBEvent[] => {
+	getMembers = (): AutocompleteMemberEntry[] => {
 		if (this.#membersCache === null) {
 			this.#fillMembersCache()
 		}
 		return this.#membersCache ?? []
-	}
-
-	getAutocompleteMembers = (): AutocompleteMemberEntry[] => {
-		if (this.#autocompleteMembersCache === null) {
-			this.#fillMembersCache()
-		}
-		return this.#autocompleteMembersCache ?? []
 	}
 
 	getPinnedEvents(): EventID[] {
@@ -311,11 +305,9 @@ export class RoomStateStore {
 			this.parent.invalidateEmojiPacksCache()
 		} else if (evtType === "m.room.member") {
 			this.#membersCache = null
-			this.#autocompleteMembersCache = null
 			this.requestedMembers.delete(key as UserID)
 		} else if (evtType === "m.room.power_levels") {
 			this.#membersCache = null
-			this.#autocompleteMembersCache = null
 		}
 		this.stateSubs.notify(this.stateSubKey(evtType, key))
 	}
@@ -399,7 +391,6 @@ export class RoomStateStore {
 			newStateMap.set("m.room.member", this.state.get("m.room.member") ?? new Map())
 		} else {
 			this.#membersCache = null
-			this.#autocompleteMembersCache = null
 		}
 		this.state = newStateMap
 		this.stateLoaded = true
@@ -427,6 +418,11 @@ export class RoomStateStore {
 		if (decrypted.preview_event_rowid) {
 			this.meta.current.preview_event_rowid = decrypted.preview_event_rowid
 		}
+	}
+
+	applyTyping(users: string[]) {
+		this.typing = users
+		this.typingSub.notify()
 	}
 
 	doGarbageCollection() {
@@ -467,7 +463,6 @@ export class RoomStateStore {
 		this.fullMembersLoaded = false
 		this.membersRequested = false
 		this.#membersCache = null
-		this.#autocompleteMembersCache = null
 		this.paginationRequestedForRow = -1
 		this.hasMoreHistory = true
 		this.timeline = []

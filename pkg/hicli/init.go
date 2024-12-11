@@ -23,6 +23,9 @@ func (h *HiClient) getInitialSyncRoom(ctx context.Context, room *database.Room) 
 	ad, err := h.DB.AccountData.GetAllRoom(ctx, h.Account.UserID, room.ID)
 	if err != nil {
 		zerolog.Ctx(ctx).Err(err).Stringer("room_id", room.ID).Msg("Failed to get room account data")
+		if ctx.Err() != nil {
+			return nil
+		}
 		syncRoom.AccountData = make(map[event.Type]*database.AccountData)
 	} else {
 		syncRoom.AccountData = make(map[event.Type]*database.AccountData, len(ad))
@@ -34,6 +37,9 @@ func (h *HiClient) getInitialSyncRoom(ctx context.Context, room *database.Room) 
 		previewEvent, err := h.DB.Event.GetByRowID(ctx, room.PreviewEventRowID)
 		if err != nil {
 			zerolog.Ctx(ctx).Err(err).Stringer("room_id", room.ID).Msg("Failed to get preview event for room")
+			if ctx.Err() != nil {
+				return nil
+			}
 		} else if previewEvent != nil {
 			h.ReprocessExistingEvent(ctx, previewEvent)
 			previewMember, err := h.DB.CurrentState.Get(ctx, room.ID, event.StateMember, previewEvent.Sender.String())
@@ -76,12 +82,18 @@ func (h *HiClient) GetInitialSync(ctx context.Context, batchSize int) iter.Seq[*
 				LeftRooms:   make([]id.RoomID, 0),
 				AccountData: make(map[event.Type]*database.AccountData),
 			}
+			if i == 0 {
+				payload.ClearState = true
+			}
 			for _, room := range rooms {
 				if room.SortingTimestamp == rooms[len(rooms)-1].SortingTimestamp {
 					break
 				}
 				maxTS = room.SortingTimestamp.Time
 				payload.Rooms[room.ID] = h.getInitialSyncRoom(ctx, room)
+				if ctx.Err() != nil {
+					return
+				}
 			}
 			if !yield(&payload) || len(rooms) < batchSize {
 				break

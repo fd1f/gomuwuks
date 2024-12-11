@@ -32,6 +32,7 @@ import {
 	SendCompleteData,
 	SyncCompleteData,
 	SyncRoom,
+	TypingEventData,
 	UnknownEventContent,
 	UserID,
 	roomStateGUIDToString,
@@ -154,6 +155,10 @@ export class StateStore {
 	}
 
 	applySync(sync: SyncCompleteData) {
+		if (sync.clear_state && this.rooms.size > 0) {
+			console.info("Clearing state store as sync told to reset and there are rooms in the store")
+			this.clear()
+		}
 		const resyncRoomList = this.roomList.current.length === 0
 		const changedRoomListEntries = new Map<RoomID, RoomListEntry | null>()
 		for (const [roomID, data] of Object.entries(sync.rooms)) {
@@ -376,6 +381,15 @@ export class StateStore {
 				this.roomList.emit(updatedRoomList)
 			}
 		}
+	}
+
+	applyTyping(typing: TypingEventData) {
+		const room = this.rooms.get(typing.room_id)
+		if (!room) {
+			// TODO log or something?
+			return
+		}
+		room.applyTyping(typing.user_ids)
 	}
 
 	doGarbageCollection() {

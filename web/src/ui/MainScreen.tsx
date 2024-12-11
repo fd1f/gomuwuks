@@ -58,7 +58,7 @@ class ContextFields implements MainScreenContextFields {
 	}
 
 	get currentRightPanel(): RightPanelProps | null {
-		return this.rightPanelStack.length ? this.rightPanelStack[this.rightPanelStack.length-1] : null
+		return this.rightPanelStack.length ? this.rightPanelStack[this.rightPanelStack.length - 1] : null
 	}
 
 	setRightPanel = (props: RightPanelProps | null, pushState = true) => {
@@ -149,41 +149,63 @@ class ContextFields implements MainScreenContextFields {
 
 const SYNC_ERROR_HIDE_DELAY = 30 * 1000
 
-const handleURLHash = (client: Client, context: ContextFields) => {
+const handleURLHash = (client: Client) => {
 	if (!location.hash.startsWith("#/uri/")) {
-		return
+		if (location.search) {
+			const currentETag = (
+				document.querySelector("meta[name=gomuks-frontend-etag]") as HTMLMetaElement
+			)?.content
+			const newURL = new URL(location.href)
+			const updateTo = newURL.searchParams.get("updateTo")
+			if (updateTo === currentETag) {
+				console.info("Update to etag", updateTo, "successful")
+			} else {
+				console.warn("Update to etag", updateTo, "failed, got", currentETag)
+			}
+			const state = JSON.parse(newURL.searchParams.get("state") || "{}")
+			newURL.search = ""
+			history.replaceState(state, "", newURL.toString())
+			return state
+		}
+		return history.state
 	}
+
 	const decodedURI = decodeURIComponent(location.hash.slice("#/uri/".length))
 	const uri = parseMatrixURI(decodedURI)
 	if (!uri) {
 		console.error("Invalid matrix URI", decodedURI)
-		return
+		return history.state
 	}
 	console.log("Handling URI", uri)
 	const newURL = new URL(location.href)
 	newURL.hash = ""
+	newURL.search = ""
 	if (uri.identifier.startsWith("@")) {
-		const right_panel = {
-			type: "user",
-			userID: uri.identifier,
-		} as RightPanelProps
-		history.replaceState({ right_panel }, "", newURL.toString())
-		context.setRightPanel(right_panel, false)
+		const newState = {
+			right_panel: {
+				type: "user",
+				userID: uri.identifier,
+			},
+		}
+		history.replaceState(newState, "", newURL.toString())
+		return newState
 	} else if (uri.identifier.startsWith("!")) {
-		history.replaceState({ room_id: uri.identifier }, "", newURL.toString())
-		context.setActiveRoom(uri.identifier, false)
+		const newState = { room_id: uri.identifier }
+		history.replaceState(newState, "", newURL.toString())
+		return newState
 	} else if (uri.identifier.startsWith("#")) {
 		// TODO loading indicator or something for this?
 		client.rpc.resolveAlias(uri.identifier).then(
 			res => {
-				history.replaceState({ room_id: res.room_id }, "", newURL.toString())
-				context.setActiveRoom(res.room_id, false)
+				history.pushState({ room_id: res.room_id }, "", newURL.toString())
 			},
 			err => window.alert(`Failed to resolve room alias ${uri.identifier}: ${err}`),
 		)
+		return null
 	} else {
 		console.error("Invalid matrix URI", uri)
 	}
+	return history.state
 }
 
 const MainScreen = () => {
@@ -208,8 +230,8 @@ const MainScreen = () => {
 		}
 		window.addEventListener("popstate", listener)
 		const initHandle = () => {
-			listener({ state: history.state } as PopStateEvent)
-			handleURLHash(client, context)
+			const state = handleURLHash(client)
+			listener({ state } as PopStateEvent)
 		}
 		let cancel = () => {}
 		if (client.initComplete.current) {

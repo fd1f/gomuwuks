@@ -19,10 +19,44 @@ import type { RPCCommand } from "./types"
 const PING_INTERVAL = 15_000
 const RECV_TIMEOUT = 4 * PING_INTERVAL
 
+function checkUpdate(etag: string) {
+	if (!import.meta.env.PROD) {
+		return
+	} else if (!etag) {
+		console.log("Not checking for update, frontend etag not found in websocket init")
+		return
+	}
+	const currentETag = (
+		document.querySelector("meta[name=gomuks-frontend-etag]") as HTMLMetaElement
+	)?.content
+	if (!currentETag) {
+		console.log("Not checking for update, frontend etag not found in head")
+	} else if (currentETag === etag) {
+		console.log("Frontend is up to date")
+	} else if (localStorage.lastUpdateTo === etag) {
+		console.warn(
+			`Frontend etag mismatch ${currentETag} !== ${etag}, `,
+			"but localstorage says an update was already attempted",
+		)
+	} else {
+		console.info(`Frontend etag mismatch ${currentETag} !== ${etag}, reloading`)
+		localStorage.lastUpdateTo = etag
+		location.search = "?" + new URLSearchParams({
+			updateTo: etag,
+			state: JSON.stringify(history.state),
+		})
+	}
+}
+
 export default class WSClient extends RPCClient {
 	#conn: WebSocket | null = null
 	#lastMessage: number = 0
 	#pingInterval: number | null = null
+	#lastReceivedEvt: number = 0
+	#resumeRunID: string = ""
+	#stopped = false
+	#reconnectTimeout: number | null = null
+	#connectFailures: number = 0
 
 	constructor(readonly addr: string) {
 		super()
@@ -30,16 +64,21 @@ export default class WSClient extends RPCClient {
 
 	start() {
 		try {
+			this.#stopped = false
 			this.#lastMessage = Date.now()
-			console.info("Connecting to websocket", this.addr)
-			this.#conn = new WebSocket(this.addr)
+			const params = new URLSearchParams({
+				run_id: this.#resumeRunID,
+				last_received_event: this.#lastReceivedEvt.toString(),
+			}).toString()
+			const addr = this.#lastReceivedEvt && this.#resumeRunID ? `${this.addr}?${params}` : this.addr
+			console.info("Connecting to websocket", addr)
+			this.#conn = new WebSocket(addr)
 			this.#conn.onmessage = this.#onMessage
 			this.#conn.onopen = this.#onOpen
 			this.#conn.onerror = this.#onError
 			this.#conn.onclose = this.#onClose
-			this.#pingInterval = setInterval(this.#pingLoop, PING_INTERVAL)
 		} catch (err) {
-			this.#dispatchConnectionStatus(false, err as Error)
+			this.#dispatchConnectionStatus(false, false, `Failed to create websocket: ${err}`)
 		}
 	}
 
@@ -49,12 +88,20 @@ export default class WSClient extends RPCClient {
 			this.#conn?.close(4002, "Ping timeout")
 			return
 		}
-		this.send(JSON.stringify({ command: "ping", request_id: this.nextRequestID }))
+		this.send(JSON.stringify({
+			command: "ping",
+			data: {
+				last_received_id: this.#lastReceivedEvt,
+			},
+			request_id: this.nextRequestID,
+		}))
 	}
 
 	stop() {
+		this.#stopped = true
 		if (this.#pingInterval !== null) {
 			clearInterval(this.#pingInterval)
+			this.#pingInterval = null
 		}
 		this.#conn?.close(1000, "Client closed")
 	}
@@ -72,7 +119,7 @@ export default class WSClient extends RPCClient {
 
 	#onMessage = (ev: MessageEvent) => {
 		this.#lastMessage = Date.now()
-		let parsed: RPCCommand<unknown>
+		let parsed: RPCCommand
 		try {
 			parsed = JSON.parse(ev.data)
 			if (!parsed.command) {
@@ -84,16 +131,30 @@ export default class WSClient extends RPCClient {
 			this.#conn?.close(1003, "Malformed JSON")
 			return
 		}
+		if (parsed.request_id < 0) {
+			this.#lastReceivedEvt = parsed.request_id
+		} else if (parsed.command === "run_id") {
+			console.log("Received run ID", parsed.data)
+			this.#resumeRunID = parsed.data.run_id
+			checkUpdate(parsed.data.etag)
+		}
 		this.onCommand(parsed)
 	}
 
-	#dispatchConnectionStatus(connected: boolean, error: Error | null) {
-		this.connect.emit({ connected, error })
+	#dispatchConnectionStatus(connected: boolean, reconnecting: boolean, error: string | null, nextAttempt?: number) {
+		this.connect.emit({
+			connected,
+			reconnecting,
+			error,
+			nextAttempt: nextAttempt ? new Date(nextAttempt).toLocaleTimeString() : undefined,
+		})
 	}
 
 	#onOpen = () => {
 		console.info("Websocket opened")
-		this.#dispatchConnectionStatus(true, null)
+		this.#dispatchConnectionStatus(true, false, null)
+		this.#connectFailures = 0
+		this.#pingInterval = setInterval(this.#pingLoop, PING_INTERVAL)
 	}
 
 	#clearPending = () => {
@@ -105,13 +166,33 @@ export default class WSClient extends RPCClient {
 
 	#onError = (ev: Event) => {
 		console.error("Websocket error:", ev)
-		this.#dispatchConnectionStatus(false, new Error("Websocket error"))
-		this.#clearPending()
 	}
 
 	#onClose = (ev: CloseEvent) => {
+		this.#connectFailures++
 		console.warn("Websocket closed:", ev)
-		this.#dispatchConnectionStatus(false, new Error(`Websocket closed: ${ev.code} ${ev.reason}`))
 		this.#clearPending()
+		if (this.#pingInterval !== null) {
+			clearInterval(this.#pingInterval)
+			this.#pingInterval = null
+		}
+		const willReconnect = !this.#stopped && !this.#reconnectTimeout
+		const backoff = Math.min(2 ** (this.#connectFailures - 4), 10) * 1000
+		this.#dispatchConnectionStatus(
+			false,
+			willReconnect,
+			`Websocket closed: ${ev.code} ${ev.reason}`,
+			Date.now() + backoff,
+		)
+		if (willReconnect) {
+			console.log("Attempting to reconnect in", backoff, "ms")
+			this.#reconnectTimeout = setTimeout(() => {
+				console.log("Reconnecting now")
+				this.#reconnectTimeout = null
+				this.start()
+			}, backoff)
+		} else {
+			console.log(`Not reconnecting (stopped=${this.#stopped}, reconnectTimeout=${this.#reconnectTimeout})`)
+		}
 	}
 }

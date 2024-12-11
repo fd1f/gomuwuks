@@ -52,16 +52,16 @@ export default class Client {
 				method: "POST",
 				signal,
 			})
-			if (!resp.ok) {
+			if (!resp.ok && !signal.aborted) {
 				this.rpc.connect.emit({
 					connected: false,
-					error: new Error(`Authentication failed: ${resp.statusText}`),
+					reconnecting: false,
+					error: `Authentication failed: ${resp.statusText}`,
 				})
 				return
 			}
 		} catch (err) {
-			const error = err instanceof Error ? err : new Error(`${err}`)
-			this.rpc.connect.emit({ connected: false, error })
+			this.rpc.connect.emit({ connected: false, reconnecting: false, error: `Authentication failed: ${err}` })
 		}
 		if (signal.aborted) {
 			return
@@ -116,6 +116,8 @@ export default class Client {
 			this.store.applySendComplete(ev.data)
 		} else if (ev.command === "image_auth_token") {
 			this.store.imageAuthToken = ev.data
+		} else if (ev.command === "typing") {
+			this.store.applyTyping(ev.data)
 		}
 	}
 
@@ -324,12 +326,12 @@ export default class Client {
 		this.initComplete.emit(false)
 		this.syncStatus.emit({ type: "waiting", error_count: 0 })
 		this.state.clearCache()
-		localStorage.clear()
 		this.store.clear()
 	}
 
 	async logout() {
 		await this.rpc.logout()
 		this.clearState()
+		localStorage.clear()
 	}
 }

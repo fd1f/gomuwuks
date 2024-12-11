@@ -42,7 +42,9 @@ import type {
 
 export interface ConnectionEvent {
 	connected: boolean
-	error: Error | null
+	reconnecting: boolean
+	error: string | null
+	nextAttempt?: string
 }
 
 export class ErrorResponse extends Error {
@@ -75,7 +77,7 @@ export default abstract class RPCClient {
 	public abstract start(): void
 	public abstract stop(): void
 
-	protected onCommand(data: RPCCommand<unknown>) {
+	protected onCommand(data: RPCCommand) {
 		if (data.command === "response" || data.command === "error") {
 			const target = this.pendingRequests.get(data.request_id)
 			if (!target) {

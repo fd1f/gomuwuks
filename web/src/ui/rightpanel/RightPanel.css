@@ -5,7 +5,7 @@ div.right-panel {
 	overflow: hidden;
 
 	> div.right-panel-header {
-		height: 3rem;
+		height: 3.5rem;
 		border-bottom: 1px solid var(--border-color);
 		box-sizing: border-box;
 		display: flex;
@@ -151,11 +151,11 @@ div.right-panel-content.user {
 				height: 1.5rem;
 				width: 1.5rem;
 
-				&.trust-blacklisted {
+				&.trust-blacklisted, &.trust-unverified.has-master-key {
 					color: var(--error-color);
 				}
 
-				&.trust-cross-signed-untrusted, &.trust-unverified {
+				&.trust-cross-signed-untrusted, &.trust-unverified.no-master-key {
 					color: darkorange;
 				}
 
@@ -193,34 +193,84 @@ div.right-panel-content.user {
 }
 
 div.right-panel-content.members {
-	display: flex;
-	flex-direction: column;
+	overflow: hidden;
 
-	> div.member {
-		display: flex;
-		align-items: center;
-		gap: .5rem;
-		cursor: var(--clickable-cursor);
-
-		content-visibility: auto;
-		contain-intrinsic-height: 3rem;
-		height: 3rem;
-		padding: .25rem;
-
-		> span.displayname {
-			overflow: hidden;
-			text-wrap: nowrap;
-			text-overflow: ellipsis;
-			user-select: none;
-		}
-
-		&:hover, &:focus {
-			background-color: var(--light-hover-color);
-		}
+	> input.member-filter {
+		border: none;
+		outline: none;
+		padding: 1rem;
+		border-bottom: 1px solid var(--border-color);
+		width: 100%;
+		box-sizing: border-box;
 	}
 
-	> button {
-		border-radius: 0;
-		padding: .5rem;
+	> div.member-list {
+		display: flex;
+		flex-direction: column;
+		overflow: auto;
+
+		> div.member {
+			display: grid;
+			column-gap: .5rem;
+			cursor: var(--clickable-cursor);
+
+			content-visibility: auto;
+			contain-intrinsic-height: 3rem;
+			height: 3rem;
+			padding: .25rem;
+			align-items: center;
+
+			grid-template:
+				"avatar  displayname" 3rem
+				/ 2.5rem 1fr;
+
+			&:hover {
+				grid-template:
+					"avatar  displayname" auto
+					"avatar  userid"      auto
+					/ 2.5rem 1fr;
+
+				> div.user-id {
+					display: block;
+					align-self: start;
+				}
+
+				> div.displayname {
+					align-self: end;
+				}
+			}
+
+			> div.displayname, > div.user-id {
+				overflow: hidden;
+				text-wrap: nowrap;
+				text-overflow: ellipsis;
+				user-select: none;
+			}
+
+			> div.displayname {
+				grid-area: displayname;
+			}
+
+			> img.avatar {
+				grid-area: avatar;
+			}
+
+			> div.user-id {
+				grid-area: userid;
+				font-family: var(--monospace-font-stack);
+				font-size: .75rem;
+				opacity: .7;
+				display: none;
+			}
+
+			&:hover, &:focus {
+				background-color: var(--light-hover-color);
+			}
+		}
+
+		> button {
+			border-radius: 0;
+			padding: .5rem;
+		}
 	}
 }
