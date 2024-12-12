@@ -18,7 +18,7 @@ import { PulseLoader } from "react-spinners"
 import { getAvatarURL } from "@/api/media.ts"
 import { useRoomTyping } from "@/api/statestore"
 import { MemberEventContent } from "@/api/types/mxtypes.ts"
-import { humanJoinReact } from "@/util/reactjoin.tsx"
+import { humanJoin } from "@/util/join.ts"
 import ClientContext from "../ClientContext.ts"
 import { useRoomContext } from "../roomview/roomcontext.ts"
 import "./TypingNotifications.css"
@@ -52,12 +52,10 @@ const TypingNotifications = () => {
 
 	let description: JSX.Element | null = null
 	if (typing.length > 4) {
-		description = <div>{typing.length} users are typing</div>
+		description = <div className="description">{typing.length} users are typing</div>
 	} else if (typing.length > 0) {
-		description = <div>
-			{humanJoinReact(memberNames)}
-			{typing.length === 1 ? " is " : " are "}
-			typing
+		description = <div className="description">
+			{humanJoin(memberNames)} {typing.length === 1 ? "is" : "are"} typing
 		</div>
 	}
 
