@@ -13,7 +13,7 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
-import { JSX, use, useEffect, useInsertionEffect, useLayoutEffect, useMemo, useState } from "react"
+import { JSX, use, useEffect, useInsertionEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react"
 import { SyncLoader } from "react-spinners"
 import Client from "@/api/client.ts"
 import { RoomStateStore } from "@/api/statestore"
@@ -208,8 +208,21 @@ const handleURLHash = (client: Client) => {
 	return history.state
 }
 
+type ActiveRoomType = [RoomStateStore | null, RoomStateStore | null]
+
+const activeRoomReducer = (prev: ActiveRoomType, active: RoomStateStore | "clear-animation" | null): ActiveRoomType => {
+	if (active === "clear-animation") {
+		return prev[1] === null ? [null, null] : prev
+	} else if (window.innerWidth > 720 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+		return [null, active]
+	} else {
+		return [prev[1], active]
+	}
+}
+
 const MainScreen = () => {
-	const [activeRoom, directSetActiveRoom] = useState<RoomStateStore | null>(null)
+	const [[prevActiveRoom, activeRoom], directSetActiveRoom] = useReducer(activeRoomReducer, [null, null])
+	const skipNextTransitionRef = useRef(false)
 	const [rightPanel, directSetRightPanel] = useState<RightPanelProps | null>(null)
 	const client = use(ClientContext)!
 	const syncStatus = useEventAsState(client.syncStatus)
@@ -222,6 +235,7 @@ const MainScreen = () => {
 	}, [context])
 	useEffect(() => {
 		const listener = (evt: PopStateEvent) => {
+			skipNextTransitionRef.current = evt.hasUAVisualTransition
 			const roomID = evt.state?.room_id ?? null
 			if (roomID !== client.store.activeRoomID) {
 				context.setActiveRoom(roomID, false)
@@ -270,6 +284,10 @@ const MainScreen = () => {
 		["--room-list-width" as string]: `${roomListWidth}px`,
 		["--right-panel-width" as string]: `${rightPanelWidth}px`,
 	}
+	if (skipNextTransitionRef.current) {
+		extraStyle["transition"] = "none"
+		skipNextTransitionRef.current = false
+	}
 	const classNames = ["matrix-main"]
 	if (activeRoom) {
 		classNames.push("room-selected")
@@ -292,16 +310,24 @@ const MainScreen = () => {
 			Sync is failing
 		</div>
 	}
+	const renderedRoom = activeRoom ?? prevActiveRoom
+	useEffect(() => {
+		if (prevActiveRoom !== null && activeRoom === null) {
+			// Note: this timeout must match the one in MainScreen.css
+			const timeout = setTimeout(() => directSetActiveRoom("clear-animation"), 300)
+			return () => clearTimeout(timeout)
+		}
+	}, [activeRoom, prevActiveRoom])
 	return <MainScreenContext value={context}>
 		<ModalWrapper>
 			<StylePreferences client={client} activeRoom={activeRoom}/>
 			<main className={classNames.join(" ")} style={extraStyle}>
 				<RoomList activeRoomID={activeRoom?.roomID ?? null}/>
 				{resizeHandle1}
-				{activeRoom
+				{renderedRoom
 					? <RoomView
-						key={activeRoom.roomID}
-						room={activeRoom}
+						key={renderedRoom.roomID}
+						room={renderedRoom}
 						rightPanel={rightPanel}
 						rightPanelResizeHandle={resizeHandle2}
 					/>
