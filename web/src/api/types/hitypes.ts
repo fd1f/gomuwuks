@@ -22,6 +22,7 @@ import {
 	EventID,
 	EventType,
 	LazyLoadSummary,
+	ReceiptType,
 	RelationType,
 	RoomAlias,
 	RoomID,
@@ -72,6 +73,19 @@ export interface DBRoom {
 
 //eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type UnknownEventContent = Record<string, any>
+
+export interface StrippedStateEvent {
+	type: EventType
+	sender: UserID
+	state_key: string
+	content: UnknownEventContent
+}
+
+export interface DBInvitedRoom {
+	room_id: RoomID
+	created_at: number
+	invite_state: StrippedStateEvent[]
+}
 
 export enum UnreadType {
 	None = 0b0000,
@@ -145,8 +159,22 @@ export interface DBRoomAccountData {
 	content: UnknownEventContent
 }
 
+export interface DBReceipt {
+	user_id: UserID
+	receipt_type: ReceiptType
+	thread_id?: EventID | "main"
+	event_id: EventID
+	timestamp: number
+}
+
+export interface MemReceipt extends DBReceipt {
+	event_rowid: EventRowID
+	timeline_rowid: TimelineRowID
+}
+
 export interface PaginationResponse {
 	events: RawDBEvent[]
+	receipts: Record<EventID, DBReceipt[]>
 	has_more: boolean
 }
 

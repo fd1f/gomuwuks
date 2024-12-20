@@ -22,6 +22,7 @@ type SyncRoom struct {
 	Events        []*database.Event                             `json:"events"`
 	Reset         bool                                          `json:"reset"`
 	Notifications []SyncNotification                            `json:"notifications"`
+	Receipts      map[id.EventID][]*database.Receipt            `json:"receipts"`
 }
 
 type SyncNotification struct {
@@ -30,23 +31,25 @@ type SyncNotification struct {
 }
 
 type SyncComplete struct {
-	Since       *string                              `json:"since,omitempty"`
-	ClearState  bool                                 `json:"clear_state,omitempty"`
-	Rooms       map[id.RoomID]*SyncRoom              `json:"rooms"`
-	AccountData map[event.Type]*database.AccountData `json:"account_data"`
-	LeftRooms   []id.RoomID                          `json:"left_rooms"`
+	Since        *string                              `json:"since,omitempty"`
+	ClearState   bool                                 `json:"clear_state,omitempty"`
+	AccountData  map[event.Type]*database.AccountData `json:"account_data"`
+	Rooms        map[id.RoomID]*SyncRoom              `json:"rooms"`
+	LeftRooms    []id.RoomID                          `json:"left_rooms"`
+	InvitedRooms []*database.InvitedRoom              `json:"invited_rooms"`
 }
 
 func (c *SyncComplete) IsEmpty() bool {
-	return len(c.Rooms) == 0 && len(c.LeftRooms) == 0 && len(c.AccountData) == 0
+	return len(c.Rooms) == 0 && len(c.LeftRooms) == 0 && len(c.InvitedRooms) == 0 && len(c.AccountData) == 0
 }
 
 type SyncStatusType string
 
 const (
-	SyncStatusOK      SyncStatusType = "ok"
-	SyncStatusWaiting SyncStatusType = "waiting"
-	SyncStatusErrored SyncStatusType = "errored"
+	SyncStatusOK       SyncStatusType = "ok"
+	SyncStatusWaiting  SyncStatusType = "waiting"
+	SyncStatusErroring SyncStatusType = "erroring"
+	SyncStatusFailed   SyncStatusType = "permanently-failed"
 )
 
 type SyncStatus struct {

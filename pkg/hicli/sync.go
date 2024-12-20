@@ -39,12 +39,15 @@ type syncContext struct {
 	evt *SyncComplete
 }
 
-func (h *HiClient) markSyncErrored(err error) {
+func (h *HiClient) markSyncErrored(err error, permanent bool) {
 	stat := &SyncStatus{
-		Type:       SyncStatusErrored,
+		Type:       SyncStatusErroring,
 		Error:      err.Error(),
 		ErrorCount: h.syncErrors,
 		LastSync:   jsontime.UM(h.lastSync),
+	}
+	if permanent {
+		stat.Type = SyncStatusFailed
 	}
 	h.SyncStatus.Store(stat)
 	h.EventHandler(stat)
@@ -148,14 +151,20 @@ func (h *HiClient) processSyncResponse(ctx context.Context, resp *mautrix.RespSy
 		}
 	}
 	ctx.Value(syncContextKey).(*syncContext).evt.AccountData = accountData
+	for roomID, room := range resp.Rooms.Invite {
+		err = h.processSyncInvitedRoom(ctx, roomID, room)
+		if err != nil {
+			return fmt.Errorf("failed to process invited room %s: %w", roomID, err)
+		}
+	}
 	for roomID, room := range resp.Rooms.Join {
-		err := h.processSyncJoinedRoom(ctx, roomID, room)
+		err = h.processSyncJoinedRoom(ctx, roomID, room)
 		if err != nil {
 			return fmt.Errorf("failed to process joined room %s: %w", roomID, err)
 		}
 	}
 	for roomID, room := range resp.Rooms.Leave {
-		err := h.processSyncLeftRoom(ctx, roomID, room)
+		err = h.processSyncLeftRoom(ctx, roomID, room)
 		if err != nil {
 			return fmt.Errorf("failed to process left room %s: %w", roomID, err)
 		}
@@ -177,6 +186,9 @@ func (h *HiClient) receiptsToList(content *event.ReceiptEventContent) ([]*databa
 				if userID == h.Account.UserID {
 					newOwnReceipts = append(newOwnReceipts, eventID)
 				}
+				if receiptInfo.ThreadID == event.ReadReceiptThreadMain {
+					receiptInfo.ThreadID = ""
+				}
 				receiptList = append(receiptList, &database.Receipt{
 					UserID:      userID,
 					ReceiptType: receiptType,
@@ -188,6 +200,27 @@ func (h *HiClient) receiptsToList(content *event.ReceiptEventContent) ([]*databa
 		}
 	}
 	return receiptList, newOwnReceipts
+}
+
+func (h *HiClient) processSyncInvitedRoom(ctx context.Context, roomID id.RoomID, room *mautrix.SyncInvitedRoom) error {
+	ir := &database.InvitedRoom{
+		ID:          roomID,
+		CreatedAt:   jsontime.UnixMilliNow(),
+		InviteState: room.State.Events,
+	}
+	for _, evt := range room.State.Events {
+		if evt.Type == event.StateMember && evt.GetStateKey() == h.Account.UserID.String() && evt.Timestamp != 0 {
+			ir.CreatedAt = jsontime.UM(time.UnixMilli(evt.Timestamp))
+			break
+		}
+	}
+	err := h.DB.InvitedRoom.Upsert(ctx, ir)
+	if err != nil {
+		return fmt.Errorf("failed to save invited room: %w", err)
+	}
+	syncEvt := ctx.Value(syncContextKey).(*syncContext).evt
+	syncEvt.InvitedRooms = append(syncEvt.InvitedRooms, ir)
+	return nil
 }
 
 func (h *HiClient) processSyncJoinedRoom(ctx context.Context, roomID id.RoomID, room *mautrix.SyncJoinedRoom) error {
@@ -259,6 +292,10 @@ func (h *HiClient) processSyncLeftRoom(ctx context.Context, roomID id.RoomID, ro
 	if err != nil {
 		return fmt.Errorf("failed to delete room: %w", err)
 	}
+	err = h.DB.InvitedRoom.Delete(ctx, roomID)
+	if err != nil {
+		return fmt.Errorf("failed to delete invited room: %w", err)
+	}
 	payload := ctx.Value(syncContextKey).(*syncContext).evt
 	payload.LeftRooms = append(payload.LeftRooms, roomID)
 	return nil
@@ -288,20 +325,34 @@ func removeReplyFallback(evt *event.Event) []byte {
 	return nil
 }
 
-func (h *HiClient) decryptEvent(ctx context.Context, evt *event.Event) (*event.Event, []byte, string, error) {
+func (h *HiClient) decryptEvent(ctx context.Context, evt *event.Event) (*event.Event, []byte, bool, string, error) {
 	err := evt.Content.ParseRaw(evt.Type)
 	if err != nil && !errors.Is(err, event.ErrContentAlreadyParsed) {
-		return nil, nil, "", err
+		return nil, nil, false, "", err
 	}
 	decrypted, err := h.Crypto.DecryptMegolmEvent(ctx, evt)
 	if err != nil {
-		return nil, nil, "", err
+		return nil, nil, false, "", err
 	}
 	withoutFallback := removeReplyFallback(decrypted)
 	if withoutFallback != nil {
-		return decrypted, withoutFallback, decrypted.Type.Type, nil
+		return decrypted, withoutFallback, true, decrypted.Type.Type, nil
 	}
-	return decrypted, decrypted.Content.VeryRaw, decrypted.Type.Type, nil
+	return decrypted, decrypted.Content.VeryRaw, false, decrypted.Type.Type, nil
+}
+
+func (h *HiClient) decryptEventInto(ctx context.Context, evt *event.Event, dbEvt *database.Event) (*event.Event, error) {
+	decryptedEvt, rawContent, fallbackRemoved, decryptedType, err := h.decryptEvent(ctx, evt)
+	if err != nil {
+		dbEvt.DecryptionError = err.Error()
+		return nil, err
+	}
+	dbEvt.Decrypted = rawContent
+	if fallbackRemoved {
+		dbEvt.MarkReplyFallbackRemoved()
+	}
+	dbEvt.DecryptedType = decryptedType
+	return decryptedEvt, nil
 }
 
 func (h *HiClient) addMediaCache(
@@ -442,12 +493,13 @@ func (h *HiClient) calculateLocalContent(ctx context.Context, dbEvt *database.Ev
 			wasPlaintext = true
 		}
 		return &database.LocalContent{
-			SanitizedHTML: sanitizedHTML,
-			HTMLVersion:   CurrentHTMLSanitizerVersion,
-			WasPlaintext:  wasPlaintext,
-			BigEmoji:      bigEmoji,
-			HasMath:       hasMath,
-			EditSource:    editSource,
+			SanitizedHTML:        sanitizedHTML,
+			HTMLVersion:          CurrentHTMLSanitizerVersion,
+			WasPlaintext:         wasPlaintext,
+			BigEmoji:             bigEmoji,
+			HasMath:              hasMath,
+			EditSource:           editSource,
+			ReplyFallbackRemoved: dbEvt.LocalContent.GetReplyFallbackRemoved(),
 		}, inlineImages
 	}
 	return nil, nil
@@ -499,14 +551,12 @@ func (h *HiClient) processEvent(
 	contentWithoutFallback := removeReplyFallback(evt)
 	if contentWithoutFallback != nil {
 		dbEvt.Content = contentWithoutFallback
+		dbEvt.MarkReplyFallbackRemoved()
 	}
 	var decryptionErr error
 	var decryptedMautrixEvt *event.Event
 	if evt.Type == event.EventEncrypted && dbEvt.RedactedBy == "" {
-		decryptedMautrixEvt, dbEvt.Decrypted, dbEvt.DecryptedType, decryptionErr = h.decryptEvent(ctx, evt)
-		if decryptionErr != nil {
-			dbEvt.DecryptionError = decryptionErr.Error()
-		}
+		decryptedMautrixEvt, decryptionErr = h.decryptEventInto(ctx, evt, dbEvt)
 	} else if evt.Type == event.EventRedaction {
 		if evt.Redacts != "" && gjson.GetBytes(evt.Content.VeryRaw, "redacts").Str != evt.Redacts.String() {
 			var err error
@@ -702,15 +752,38 @@ func (h *HiClient) processStateAndTimeline(
 		setNewState(evt.Type, *evt.StateKey, rowID)
 	}
 	var timelineRowTuples []database.TimelineRowTuple
+	receiptMap := make(map[id.EventID][]*database.Receipt)
+	for _, receipt := range receipts {
+		if receipt.UserID != h.Account.UserID {
+			receiptMap[receipt.EventID] = append(receiptMap[receipt.EventID], receipt)
+		}
+	}
 	var err error
 	if len(timeline.Events) > 0 {
 		timelineIDs := make([]database.EventRowID, len(timeline.Events))
+		encounteredReceiptUsers := make(map[id.UserID]struct{})
 		readUpToIndex := -1
 		for i := len(timeline.Events) - 1; i >= 0; i-- {
 			evt := timeline.Events[i]
+			for _, receipt := range receiptMap[evt.ID] {
+				encounteredReceiptUsers[receipt.UserID] = struct{}{}
+			}
 			isRead := slices.Contains(newOwnReceipts, evt.ID)
 			isOwnEvent := evt.Sender == h.Account.UserID
-			if isRead || isOwnEvent {
+			_, alreadyEncountered := encounteredReceiptUsers[evt.Sender]
+			if !isOwnEvent && !alreadyEncountered {
+				encounteredReceiptUsers[evt.Sender] = struct{}{}
+				injectedReceipt := &database.Receipt{
+					RoomID:      room.ID,
+					UserID:      evt.Sender,
+					ReceiptType: event.ReceiptTypeRead,
+					EventID:     evt.ID,
+					Timestamp:   jsontime.UM(time.UnixMilli(evt.Timestamp)),
+				}
+				receipts = append(receipts, injectedReceipt)
+				receiptMap[evt.ID] = append(receiptMap[evt.ID], injectedReceipt)
+			}
+			if readUpToIndex == -1 && (isRead || isOwnEvent) {
 				readUpToIndex = i
 				// Reset unread counts if we see our own read receipt in the timeline.
 				// It'll be updated with new unreads (if any) at the end.
@@ -725,7 +798,6 @@ func (h *HiClient) processStateAndTimeline(
 					})
 					newOwnReceipts = append(newOwnReceipts, evt.ID)
 				}
-				break
 			}
 		}
 		for i, evt := range timeline.Events {
@@ -825,7 +897,10 @@ func (h *HiClient) processStateAndTimeline(
 		}
 	}
 	// TODO why is *old* unread count sometimes zero when processing the read receipt that is making it zero?
-	if roomChanged || len(accountData) > 0 || len(newOwnReceipts) > 0 || len(timelineRowTuples) > 0 || len(allNewEvents) > 0 {
+	if roomChanged || len(accountData) > 0 || len(newOwnReceipts) > 0 || len(receipts) > 0 || len(timelineRowTuples) > 0 || len(allNewEvents) > 0 {
+		for _, receipt := range receipts {
+			receipt.RoomID = ""
+		}
 		ctx.Value(syncContextKey).(*syncContext).evt.Rooms[room.ID] = &SyncRoom{
 			Meta:          room,
 			Timeline:      timelineRowTuples,
@@ -834,6 +909,7 @@ func (h *HiClient) processStateAndTimeline(
 			Reset:         timeline.Limited,
 			Events:        allNewEvents,
 			Notifications: newNotifications,
+			Receipts:      receiptMap,
 		}
 	}
 	return nil

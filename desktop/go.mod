@@ -8,7 +8,7 @@ require github.com/wailsapp/wails/v3 v3.0.0-alpha.7
 
 require (
 	go.mau.fi/gomuks v0.3.1
-	go.mau.fi/util v0.8.3-0.20241212004537-24c1a9b1d8f6
+	go.mau.fi/util v0.8.4-0.20241217231624-e3dc7ee01c86
 )
 
 require (
@@ -64,10 +64,10 @@ require (
 	github.com/yuin/goldmark v1.7.8 // indirect
 	go.mau.fi/zeroconfig v0.1.3 // indirect
 	golang.org/x/crypto v0.31.0 // indirect
-	golang.org/x/exp v0.0.0-20241210194714-1829a127f884 // indirect
+	golang.org/x/exp v0.0.0-20241215155358-4a5509556b9e // indirect
 	golang.org/x/image v0.23.0 // indirect
 	golang.org/x/mod v0.22.0 // indirect
-	golang.org/x/net v0.32.0 // indirect
+	golang.org/x/net v0.33.0 // indirect
 	golang.org/x/sync v0.10.0 // indirect
 	golang.org/x/sys v0.28.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
@@ -75,7 +75,7 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	maunium.net/go/mautrix v0.22.1-0.20241212004632-bfdd0efd0e2e // indirect
+	maunium.net/go/mautrix v0.22.2-0.20241219213402-918ed4bf23ce // indirect
 	mvdan.cc/xurls/v2 v2.5.0 // indirect
 )
 

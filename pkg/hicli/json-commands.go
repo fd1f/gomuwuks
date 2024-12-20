@@ -106,10 +106,10 @@ func (h *HiClient) handleJSONCommand(ctx context.Context, req *JSONCommand) (any
 		return unmarshalAndCall(req.Data, func(params *getEventParams) (*database.Event, error) {
 			return h.GetEvent(ctx, params.RoomID, params.EventID)
 		})
-	case "get_events_by_rowids":
-		return unmarshalAndCall(req.Data, func(params *getEventsByRowIDsParams) ([]*database.Event, error) {
-			return h.GetEventsByRowIDs(ctx, params.RowIDs)
-		})
+	//case "get_events_by_rowids":
+	//	return unmarshalAndCall(req.Data, func(params *getEventsByRowIDsParams) ([]*database.Event, error) {
+	//		return h.GetEventsByRowIDs(ctx, params.RowIDs)
+	//	})
 	case "get_room_state":
 		return unmarshalAndCall(req.Data, func(params *getRoomStateParams) ([]*database.Event, error) {
 			return h.GetRoomState(ctx, params.RoomID, params.IncludeMembers, params.FetchMembers, params.Refetch)
@@ -118,6 +118,10 @@ func (h *HiClient) handleJSONCommand(ctx context.Context, req *JSONCommand) (any
 		return unmarshalAndCall(req.Data, func(params *getSpecificRoomStateParams) ([]*database.Event, error) {
 			return h.DB.CurrentState.GetMany(ctx, params.Keys)
 		})
+	case "get_receipts":
+		return unmarshalAndCall(req.Data, func(params *getReceiptsParams) (map[id.EventID][]*database.Receipt, error) {
+			return h.GetReceipts(ctx, params.RoomID, params.EventIDs)
+		})
 	case "paginate":
 		return unmarshalAndCall(req.Data, func(params *paginateParams) (*PaginationResponse, error) {
 			return h.Paginate(ctx, params.RoomID, params.MaxTimelineID, params.Limit)
@@ -125,6 +129,21 @@ func (h *HiClient) handleJSONCommand(ctx context.Context, req *JSONCommand) (any
 	case "paginate_server":
 		return unmarshalAndCall(req.Data, func(params *paginateParams) (*PaginationResponse, error) {
 			return h.PaginateServer(ctx, params.RoomID, params.Limit)
+		})
+	case "get_room_summary":
+		return unmarshalAndCall(req.Data, func(params *joinRoomParams) (*mautrix.RespRoomSummary, error) {
+			return h.Client.GetRoomSummary(ctx, params.RoomIDOrAlias, params.Via...)
+		})
+	case "join_room":
+		return unmarshalAndCall(req.Data, func(params *joinRoomParams) (*mautrix.RespJoinRoom, error) {
+			return h.Client.JoinRoom(ctx, params.RoomIDOrAlias, &mautrix.ReqJoinRoom{
+				Via:    params.Via,
+				Reason: params.Reason,
+			})
+		})
+	case "leave_room":
+		return unmarshalAndCall(req.Data, func(params *leaveRoomParams) (*mautrix.RespLeaveRoom, error) {
+			return h.Client.LeaveRoom(ctx, params.RoomID, &mautrix.ReqLeave{Reason: params.Reason})
 		})
 	case "ensure_group_session_shared":
 		return unmarshalAndCall(req.Data, func(params *ensureGroupSessionSharedParams) (bool, error) {
@@ -259,9 +278,9 @@ type getEventParams struct {
 	EventID id.EventID `json:"event_id"`
 }
 
-type getEventsByRowIDsParams struct {
-	RowIDs []database.EventRowID `json:"row_ids"`
-}
+//type getEventsByRowIDsParams struct {
+//	RowIDs []database.EventRowID `json:"row_ids"`
+//}
 
 type getRoomStateParams struct {
 	RoomID         id.RoomID `json:"room_id"`
@@ -309,4 +328,20 @@ type paginateParams struct {
 	RoomID        id.RoomID              `json:"room_id"`
 	MaxTimelineID database.TimelineRowID `json:"max_timeline_id"`
 	Limit         int                    `json:"limit"`
+}
+
+type joinRoomParams struct {
+	RoomIDOrAlias string   `json:"room_id_or_alias"`
+	Via           []string `json:"via"`
+	Reason        string   `json:"reason"`
+}
+
+type leaveRoomParams struct {
+	RoomID id.RoomID `json:"room_id"`
+	Reason string    `json:"reason"`
+}
+
+type getReceiptsParams struct {
+	RoomID   id.RoomID    `json:"room_id"`
+	EventIDs []id.EventID `json:"event_ids"`
 }

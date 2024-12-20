@@ -15,6 +15,8 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import {
 	DBAccountData,
+	DBInvitedRoom,
+	DBReceipt,
 	DBRoom,
 	DBRoomAccountData,
 	EventRowID,
@@ -23,6 +25,7 @@ import {
 } from "./hitypes.ts"
 import {
 	DeviceID,
+	EventID,
 	EventType,
 	RoomID,
 	UserID,
@@ -74,6 +77,7 @@ export interface SyncRoom {
 	reset: boolean
 	notifications: SyncNotification[]
 	account_data: Record<EventType, DBRoomAccountData>
+	receipts: Record<EventID, DBReceipt[]>
 }
 
 export interface SyncNotification {
@@ -83,6 +87,7 @@ export interface SyncNotification {
 
 export interface SyncCompleteData {
 	rooms: Record<RoomID, SyncRoom>
+	invited_rooms: DBInvitedRoom[]
 	left_rooms: RoomID[]
 	account_data: Record<EventType, DBAccountData>
 	since?: string
@@ -110,7 +115,7 @@ export interface ClientStateEvent extends BaseRPCCommand<ClientState> {
 }
 
 export interface SyncStatus {
-	type: "ok" | "waiting" | "errored"
+	type: "ok" | "waiting" | "erroring" | "permanently-failed"
 	error?: string
 	error_count: number
 	last_sync?: number

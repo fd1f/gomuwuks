@@ -37,7 +37,7 @@ export default class Client {
 	readonly initComplete = new NonNullCachedEventDispatcher<boolean>(false)
 	readonly store = new StateStore()
 	#stateRequests: RoomStateGUID[] = []
-	#stateRequestQueued = false
+	#stateRequestPromise: Promise<void> | null = null
 	#gcInterval: number | undefined
 
 	constructor(readonly rpc: RPCClient) {
@@ -104,6 +104,7 @@ export default class Client {
 	#handleEvent = (ev: RPCEvent) => {
 		if (ev.command === "client_state") {
 			this.state.emit(ev.data)
+			this.store.userID = ev.data.is_logged_in ? ev.data.user_id : ""
 		} else if (ev.command === "sync_status") {
 			this.syncStatus.emit(ev.data)
 		} else if (ev.command === "init_complete") {
@@ -126,21 +127,25 @@ export default class Client {
 			room = this.store.rooms.get(room)
 		}
 		if (!room || room.state.get("m.room.member")?.has(userID) || room.requestedMembers.has(userID)) {
-			return
+			return null
 		}
 		room.requestedMembers.add(userID)
 		this.#stateRequests.push({ room_id: room.roomID, type: "m.room.member", state_key: userID })
-		if (!this.#stateRequestQueued) {
-			this.#stateRequestQueued = true
-			window.queueMicrotask(this.doStateRequests)
+		if (this.#stateRequestPromise === null) {
+			this.#stateRequestPromise = new Promise(this.#doStateRequestsPromise)
 		}
+		return this.#stateRequestPromise
 	}
 
-	doStateRequests = () => {
-		const reqs = this.#stateRequests
-		this.#stateRequestQueued = false
-		this.#stateRequests = []
-		this.loadSpecificRoomState(reqs).catch(err => console.error("Failed to load room state", reqs, err))
+	#doStateRequestsPromise = (resolve: () => void) => {
+		window.queueMicrotask(() => {
+			const reqs = this.#stateRequests
+			this.#stateRequestPromise = null
+			this.#stateRequests = []
+			this.loadSpecificRoomState(reqs)
+				.catch(err => console.error("Failed to load room state", reqs, err))
+				.finally(resolve)
+		})
 	}
 
 	requestEvent(room: RoomStateStore | RoomID | undefined, eventID: EventID) {
@@ -316,7 +321,7 @@ export default class Client {
 				throw new Error("Timeline changed while loading history")
 			}
 			room.hasMoreHistory = resp.has_more
-			room.applyPagination(resp.events)
+			room.applyPagination(resp.events, resp.receipts)
 		} finally {
 			room.paginating = false
 		}

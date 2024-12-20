@@ -15,7 +15,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import React, { use, useCallback, useState } from "react"
 import { getAvatarURL, getMediaURL, getUserColorIndex } from "@/api/media.ts"
-import { useRoomState } from "@/api/statestore"
+import { useRoomMember } from "@/api/statestore"
 import { MemDBEvent, MemberEventContent, UnreadType } from "@/api/types"
 import { isMobileDevice } from "@/util/ismobile.ts"
 import { getDisplayname, isEventID } from "@/util/validation.ts"
@@ -23,12 +23,13 @@ import ClientContext from "../ClientContext.ts"
 import MainScreenContext from "../MainScreenContext.ts"
 import { ModalContext } from "../modal/Modal.tsx"
 import { useRoomContext } from "../roomview/roomcontext.ts"
+import ReadReceipts from "./ReadReceipts.tsx"
 import { ReplyIDBody } from "./ReplyBody.tsx"
 import { ContentErrorBoundary, HiddenEvent, getBodyType, isSmallEvent } from "./content"
 import { EventFullMenu, EventHoverMenu, getModalStyleFromMouse } from "./menu"
-import ErrorIcon from "../../icons/error.svg?react"
-import PendingIcon from "../../icons/pending.svg?react"
-import SentIcon from "../../icons/sent.svg?react"
+import ErrorIcon from "@/icons/error.svg?react"
+import PendingIcon from "@/icons/pending.svg?react"
+import SentIcon from "@/icons/sent.svg?react"
 import "./TimelineEvent.css"
 
 export interface TimelineEventProps {
@@ -95,10 +96,7 @@ const TimelineEvent = ({ evt, prevEvt, disableMenu }: TimelineEventProps) => {
 			/>,
 		})
 	}, [openModal, evt, roomCtx])
-	const memberEvt = useRoomState(roomCtx.store, "m.room.member", evt.sender)
-	if (!memberEvt) {
-		client.requestMemberEvent(roomCtx.store, evt.sender)
-	}
+	const memberEvt = useRoomMember(client, roomCtx.store, evt.sender)
 	const memberEvtContent = memberEvt?.content as MemberEventContent | undefined
 	const BodyType = getBodyType(evt)
 	const eventTS = new Date(evt.timestamp)
@@ -201,6 +199,8 @@ const TimelineEvent = ({ evt, prevEvt, disableMenu }: TimelineEventProps) => {
 			</ContentErrorBoundary>
 			{evt.reactions ? <EventReactions reactions={evt.reactions}/> : null}
 		</div>
+		{!evt.event_id.startsWith("~") && roomCtx.store.preferences.display_read_receipts &&
+			<ReadReceipts room={roomCtx.store} eventID={evt.event_id} />}
 		{evt.sender === client.userID && evt.transaction_id ? <EventSendStatus evt={evt}/> : null}
 	</div>
 	return <>

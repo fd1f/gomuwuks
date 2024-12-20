@@ -19,6 +19,7 @@ func (h *HiClient) getInitialSyncRoom(ctx context.Context, room *database.Room) 
 		Timeline:      make([]database.TimelineRowTuple, 0),
 		State:         map[event.Type]map[string]database.EventRowID{},
 		Notifications: make([]SyncNotification, 0),
+		Receipts:      make(map[id.EventID][]*database.Receipt),
 	}
 	ad, err := h.DB.AccountData.GetAllRoom(ctx, h.Account.UserID, room.ID)
 	if err != nil {
@@ -83,7 +84,17 @@ func (h *HiClient) GetInitialSync(ctx context.Context, batchSize int) iter.Seq[*
 				AccountData: make(map[event.Type]*database.AccountData),
 			}
 			if i == 0 {
+				payload.InvitedRooms, err = h.DB.InvitedRoom.GetAll(ctx)
+				if err != nil {
+					if ctx.Err() == nil {
+						zerolog.Ctx(ctx).Err(err).Msg("Failed to get invited rooms to send to client")
+					}
+					return
+				}
 				payload.ClearState = true
+			}
+			if payload.InvitedRooms == nil {
+				payload.InvitedRooms = make([]*database.InvitedRoom, 0)
 			}
 			for _, room := range rooms {
 				if room.SortingTimestamp == rooms[len(rooms)-1].SortingTimestamp {
@@ -106,9 +117,10 @@ func (h *HiClient) GetInitialSync(ctx context.Context, batchSize int) iter.Seq[*
 			return
 		}
 		payload := SyncComplete{
-			Rooms:       make(map[id.RoomID]*SyncRoom, 0),
-			LeftRooms:   make([]id.RoomID, 0),
-			AccountData: make(map[event.Type]*database.AccountData, len(ad)),
+			Rooms:        make(map[id.RoomID]*SyncRoom),
+			InvitedRooms: make([]*database.InvitedRoom, 0),
+			LeftRooms:    make([]id.RoomID, 0),
+			AccountData:  make(map[event.Type]*database.AccountData, len(ad)),
 		}
 		for _, data := range ad {
 			payload.AccountData[event.Type{Type: data.Type, Class: event.AccountDataEventType}] = data
