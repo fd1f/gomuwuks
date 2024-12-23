@@ -92,6 +92,7 @@ export class RoomStateStore {
 	readonly meta: NonNullCachedEventDispatcher<DBRoom>
 	timeline: TimelineRowTuple[] = []
 	timelineCache: (MemDBEvent | null)[] = []
+	editTargets: EventRowID[] = []
 	state: Map<EventType, Map<string, EventRowID>> = new Map()
 	stateLoaded = false
 	typing: UserID[] = []
@@ -111,7 +112,7 @@ export class RoomStateStore {
 	readonly accountDataSubs = new MultiSubscribable()
 	readonly openNotifications: Map<EventRowID, Notification> = new Map()
 	readonly #emojiPacksCache: Map<string, CustomEmojiPack | null> = new Map()
-	readonly preferences: Preferences
+	readonly preferences: Required<Preferences>
 	readonly localPreferenceCache: Preferences
 	readonly preferenceSub = new NoDataSubscribable()
 	serverPreferenceCache: Preferences = {}
@@ -134,16 +135,25 @@ export class RoomStateStore {
 	}
 
 	#updateTimelineCache() {
+		const ownMessages: EventRowID[] = []
 		this.timelineCache = this.timeline.map(rt => {
 			const evt = this.eventsByRowID.get(rt.event_rowid)
 			if (!evt) {
 				return null
 			}
 			evt.timeline_rowid = rt.timeline_rowid
+			if (
+				evt.sender === this.parent.userID
+				&& evt.type === "m.room.message"
+				&& evt.relation_type !== "m.replace"
+			) {
+				ownMessages.push(evt.rowid)
+			}
 			return evt
 		}).concat(this.pendingEvents
 			.map(rowID => this.eventsByRowID.get(rowID))
 			.filter(evt => !!evt))
+		this.editTargets = ownMessages
 	}
 
 	notifyTimelineSubscribers() {
@@ -243,13 +253,18 @@ export class RoomStateStore {
 		return []
 	}
 
-	applyPagination(history: RawDBEvent[], allReceipts: Record<EventID, DBReceipt[]>) {
+	applyPagination(history: RawDBEvent[], related: RawDBEvent[], allReceipts: Record<EventID, DBReceipt[]>) {
 		// Pagination comes in newest to oldest, timeline is in the opposite order
 		history.reverse()
 		const newTimeline = history.map(evt => {
 			this.applyEvent(evt)
 			return { timeline_rowid: evt.timeline_rowid, event_rowid: evt.rowid }
 		})
+		for (const evt of related) {
+			if (!this.eventsByRowID.has(evt.rowid)) {
+				this.applyEvent(evt)
+			}
+		}
 		this.timeline.splice(0, 0, ...newTimeline)
 		this.notifyTimelineSubscribers()
 		for (const [evtID, receipts] of Object.entries(allReceipts)) {

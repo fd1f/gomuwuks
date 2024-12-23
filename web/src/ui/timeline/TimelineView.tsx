@@ -15,7 +15,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import { use, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { ScaleLoader } from "react-spinners"
-import { useRoomTimeline } from "@/api/statestore"
+import { usePreference, useRoomTimeline } from "@/api/statestore"
 import { MemDBEvent } from "@/api/types"
 import useFocus from "@/util/focus.ts"
 import ClientContext from "../ClientContext.ts"
@@ -42,16 +42,17 @@ const TimelineView = () => {
 	const oldestTimelineRow = timeline[0]?.timeline_rowid
 	const oldScrollHeight = useRef(0)
 	const focused = useFocus()
+	const smallReplies = usePreference(client.store, room, "small_replies")
 
 	// When the user scrolls the timeline manually, remember if they were at the bottom,
 	// so that we can keep them at the bottom when new events are added.
-	const handleScroll = useCallback(() => {
+	const handleScroll = () => {
 		if (!timelineViewRef.current) {
 			return
 		}
 		const timelineView = timelineViewRef.current
 		roomCtx.scrolledToBottom = timelineView.scrollTop + timelineView.clientHeight + 1 >= timelineView.scrollHeight
-	}, [roomCtx])
+	}
 	// Save the scroll height prior to updating the timeline, so that we can adjust the scroll position if needed.
 	if (timelineViewRef.current) {
 		oldScrollHeight.current = timelineViewRef.current.scrollHeight
@@ -66,12 +67,6 @@ const TimelineView = () => {
 			timelineViewRef.current.scrollTop += timelineViewRef.current.scrollHeight - oldScrollHeight.current
 		}
 		prevOldestTimelineRow.current = timeline[0]?.timeline_rowid ?? 0
-		roomCtx.ownMessages = timeline
-			.filter(evt => evt !== null
-				&& evt.sender === client.userID
-				&& evt.type === "m.room.message"
-				&& evt.relation_type !== "m.replace")
-			.map(evt => evt!.rowid)
 	}, [client.userID, roomCtx, timeline])
 	useEffect(() => {
 		const newestEvent = timeline[timeline.length - 1]
@@ -119,7 +114,9 @@ const TimelineView = () => {
 	return <div className="timeline-view" onScroll={handleScroll} ref={timelineViewRef}>
 		<div className="timeline-beginning">
 			{room.hasMoreHistory ? <button onClick={loadHistory} disabled={isLoadingHistory}>
-				{isLoadingHistory ? <><ScaleLoader /> Loading history...</> : "Load more history"}
+				{isLoadingHistory
+					? <><ScaleLoader color="var(--primary-color)"/> Loading history...</>
+					: "Load more history"}
 			</button> : "No more history available in this room"}
 		</div>
 		<div className="timeline-list">
@@ -129,7 +126,7 @@ const TimelineView = () => {
 					return null
 				}
 				const thisEvt = <TimelineEvent
-					key={entry.rowid} evt={entry} prevEvt={prevEvt}
+					key={entry.rowid} evt={entry} prevEvt={prevEvt} smallReplies={smallReplies}
 				/>
 				prevEvt = entry
 				return thisEvt

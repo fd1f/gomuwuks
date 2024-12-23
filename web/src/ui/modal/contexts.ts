@@ -13,34 +13,30 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
+import React, { JSX, createContext } from "react"
 
-if (!window.Iterator?.prototype.map) {
-	const iterProto = (new Map([])).keys().__proto__
-	iterProto.map = function(callbackFn) {
-		const output = []
-		let i = 0
-		for (const item of this) {
-			output.push(callbackFn(item, i))
-			i++
-		}
-		return output
-	}
-	iterProto.filter = function(callbackFn) {
-		const output = []
-		let i = 0
-		for (const item of this) {
-			if (callbackFn(item, i)) {
-				output.push(item)
-			}
-			i++
-		}
-		return output
-	}
-	const identity = x => x
-	iterProto.toArray = function() {
-		return this.map(identity)
-	}
-	Array.prototype.toArray = function() {
-		return this
-	}
+export interface LightboxParams {
+	src: string
+	alt: string
 }
+
+export type OpenLightboxType = (params: LightboxParams | React.MouseEvent<HTMLImageElement>) => void
+
+export const LightboxContext = createContext<OpenLightboxType>(() =>
+	console.error("Tried to open lightbox without being inside context"))
+
+export interface ModalState {
+	content: JSX.Element
+	dimmed?: boolean
+	boxed?: boolean
+	boxClass?: string
+	innerBoxClass?: string
+	onClose?: () => void
+}
+
+type openModal = (state: ModalState) => void
+
+export const ModalContext = createContext<openModal>(() =>
+	console.error("Tried to open modal without being inside context"))
+
+export const ModalCloseContext = createContext<() => void>(() => {})

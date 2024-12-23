@@ -88,6 +88,7 @@ func (h *HiClient) preProcessSyncResponse(ctx context.Context, resp *mautrix.Res
 		}
 	}
 	resp.ToDevice.Events = postponedToDevices
+	h.Crypto.MarkOlmHashSavePoint(ctx)
 
 	return nil
 }
@@ -395,12 +396,7 @@ func (h *HiClient) addMediaCache(
 }
 
 func (h *HiClient) cacheMedia(ctx context.Context, evt *event.Event, rowID database.EventRowID) {
-	switch evt.Type {
-	case event.EventMessage, event.EventSticker:
-		content, ok := evt.Content.Parsed.(*event.MessageEventContent)
-		if !ok {
-			return
-		}
+	cacheMessageEventContent := func(content *event.MessageEventContent) {
 		if content.File != nil {
 			h.addMediaCache(ctx, rowID, content.File.URL, content.File, content.Info, content.GetFileName())
 		} else if content.URL != "" {
@@ -410,6 +406,35 @@ func (h *HiClient) cacheMedia(ctx context.Context, evt *event.Event, rowID datab
 			h.addMediaCache(ctx, rowID, content.Info.ThumbnailFile.URL, content.Info.ThumbnailFile, content.Info.ThumbnailInfo, "")
 		} else if content.GetInfo().ThumbnailURL != "" {
 			h.addMediaCache(ctx, rowID, content.Info.ThumbnailURL, nil, content.Info.ThumbnailInfo, "")
+		}
+
+		for _, image := range content.BeeperGalleryImages {
+			h.cacheMedia(ctx, &event.Event{
+				Type:    event.EventMessage,
+				Content: event.Content{Parsed: image},
+			}, rowID)
+		}
+
+		for _, preview := range content.BeeperLinkPreviews {
+			info := &event.FileInfo{MimeType: preview.ImageType}
+			if preview.ImageEncryption != nil {
+				h.addMediaCache(ctx, rowID, preview.ImageEncryption.URL, preview.ImageEncryption, info, "")
+			} else if preview.ImageURL != "" {
+				h.addMediaCache(ctx, rowID, preview.ImageURL, nil, info, "")
+			}
+		}
+	}
+
+	switch evt.Type {
+	case event.EventMessage, event.EventSticker:
+		content, ok := evt.Content.Parsed.(*event.MessageEventContent)
+		if !ok {
+			return
+		}
+
+		cacheMessageEventContent(content)
+		if content.NewContent != nil {
+			cacheMessageEventContent(content.NewContent)
 		}
 	case event.StateRoomAvatar:
 		_ = evt.Content.ParseRaw(evt.Type)
@@ -644,6 +669,7 @@ func (h *HiClient) processStateAndTimeline(
 	}
 	decryptionQueue := make(map[id.SessionID]*database.SessionRequest)
 	allNewEvents := make([]*database.Event, 0, len(state.Events)+len(timeline.Events))
+	addedEvents := make(map[database.EventRowID]struct{})
 	newNotifications := make([]SyncNotification, 0)
 	var recalculatePreviewEvent, unreadMessagesWereMaybeRedacted bool
 	var newUnreadCounts database.UnreadCounts
@@ -658,7 +684,11 @@ func (h *HiClient) processStateAndTimeline(
 		} else if dbEvt == nil {
 			return nil, nil
 		}
-		allNewEvents = append(allNewEvents, dbEvt)
+		_, alreadyAdded := addedEvents[dbEvt.RowID]
+		if !alreadyAdded {
+			addedEvents[dbEvt.RowID] = struct{}{}
+			allNewEvents = append(allNewEvents, dbEvt)
+		}
 		return dbEvt, nil
 	}
 	processRedaction := func(evt *event.Event) error {
@@ -723,6 +753,7 @@ func (h *HiClient) processStateAndTimeline(
 			processImportantEvent(ctx, evt, room, updatedRoom)
 		}
 		allNewEvents = append(allNewEvents, dbEvt)
+		addedEvents[dbEvt.RowID] = struct{}{}
 		if evt.Type == event.EventRedaction && evt.Redacts != "" {
 			err = processRedaction(evt)
 			if err != nil {
@@ -732,6 +763,11 @@ func (h *HiClient) processStateAndTimeline(
 			_, err = addOldEvent(0, dbEvt.RelatesTo)
 			if err != nil {
 				return -1, fmt.Errorf("failed to get relation target of event: %w", err)
+			}
+		} else if replyTo := dbEvt.GetReplyTo(); replyTo != "" {
+			_, err = addOldEvent(0, replyTo)
+			if err != nil {
+				return -1, fmt.Errorf("failed to get reply target of event: %w", err)
 			}
 		}
 		return dbEvt.RowID, nil

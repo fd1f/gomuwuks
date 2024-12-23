@@ -13,7 +13,7 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
-import { JSX, use, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react"
+import { JSX, use, useEffect, useMemo, useReducer, useRef, useState } from "react"
 import { SyncLoader } from "react-spinners"
 import Client from "@/api/client.ts"
 import { RoomStateStore } from "@/api/statestore"
@@ -24,7 +24,7 @@ import ClientContext from "./ClientContext.ts"
 import MainScreenContext, { MainScreenContextFields } from "./MainScreenContext.ts"
 import StylePreferences from "./StylePreferences.tsx"
 import Keybindings from "./keybindings.ts"
-import { ModalWrapper } from "./modal/Modal.tsx"
+import { ModalWrapper } from "./modal"
 import RightPanel, { RightPanelProps } from "./rightpanel/RightPanel.tsx"
 import RoomList from "./roomlist/RoomList.tsx"
 import RoomPreview, { RoomPreviewProps } from "./roomview/RoomPreview.tsx"
@@ -124,6 +124,13 @@ class ContextFields implements MainScreenContextFields {
 		}
 	}
 
+	#getWindowTitle(room?: RoomStateStore, name?: string) {
+		if (!room) {
+			return this.client.store.preferences.window_title
+		}
+		return room.preferences.room_window_title.replace("$room", name!)
+	}
+
 	#setActiveRoom(room: RoomStateStore, pushState: boolean) {
 		window.activeRoom = room
 		this.directSetActiveRoom(room)
@@ -147,7 +154,7 @@ class ContextFields implements MainScreenContextFields {
 		if (roomNameForTitle && roomNameForTitle.length > 48) {
 			roomNameForTitle = roomNameForTitle.slice(0, 45) + "…"
 		}
-		document.title = `${roomNameForTitle} - gomuks web`
+		document.title = this.#getWindowTitle(room, roomNameForTitle)
 	}
 
 	#closeActiveRoom(pushState: boolean) {
@@ -161,7 +168,7 @@ class ContextFields implements MainScreenContextFields {
 		if (pushState) {
 			history.pushState({}, "")
 		}
-		document.title = "gomuks web"
+		document.title = this.#getWindowTitle()
 	}
 
 	clickRoom = (evt: React.MouseEvent) => {
@@ -280,10 +287,8 @@ const MainScreen = () => {
 		() => new ContextFields(directSetRightPanel, directSetActiveRoom, client),
 		[client],
 	)
-	useLayoutEffect(() => {
-		window.mainScreenContext = context
-	}, [context])
 	useEffect(() => {
+		window.mainScreenContext = context
 		const listener = (evt: PopStateEvent) => {
 			skipNextTransitionRef.current = evt.hasUAVisualTransition
 			const roomID = evt.state?.room_id ?? null
