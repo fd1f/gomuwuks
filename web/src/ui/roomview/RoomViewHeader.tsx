@@ -13,19 +13,21 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
-import { use } from "react"
+import { use, useCallback } from "react"
 import { getRoomAvatarURL } from "@/api/media.ts"
 import { RoomStateStore } from "@/api/statestore"
 import { useEventAsState } from "@/util/eventdispatcher.ts"
 import MainScreenContext from "../MainScreenContext.ts"
 import { LightboxContext } from "../modal"
 import { ModalContext } from "../modal"
+import StateViewer from "../stateviewer/StateViewer.tsx"
 import SettingsView from "../settings/SettingsView.tsx"
 import BackIcon from "@/icons/back.svg?react"
 import PeopleIcon from "@/icons/group.svg?react"
 import PinIcon from "@/icons/pin.svg?react"
 import SettingsIcon from "@/icons/settings.svg?react"
 import "./RoomViewHeader.css"
+
 
 interface RoomViewHeaderProps {
 	room: RoomStateStore
@@ -35,6 +37,14 @@ const RoomViewHeader = ({ room }: RoomViewHeaderProps) => {
 	const roomMeta = useEventAsState(room.meta)
 	const mainScreen = use(MainScreenContext)
 	const openModal = use(ModalContext)
+	const openStateViewer = useCallback(() => {
+		openModal({
+			dimmed: true,
+			boxed: true,
+			innerBoxClass: "state-view",
+			content: <StateViewer room={room} />,
+		})
+	}, [room, openModal])
 	const openSettings = () => {
 		openModal({
 			dimmed: true,
@@ -71,6 +81,10 @@ const RoomViewHeader = ({ room }: RoomViewHeaderProps) => {
 				onClick={mainScreen.clickRightPanelOpener}
 				title="Room Members"
 			><PeopleIcon/></button>
+			<button
+				title="Explore room state"
+				onClick={openStateViewer}
+			>s</button>
 			<button title="Room Settings" onClick={openSettings}><SettingsIcon/></button>
 		</div>
 	</div>
