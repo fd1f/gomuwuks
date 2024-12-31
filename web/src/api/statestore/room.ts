@@ -42,7 +42,7 @@ import {
 	UserID,
 	roomStateGUIDToString,
 } from "../types"
-import type { StateStore } from "./main.ts"
+import type { RoomListEntry, StateStore } from "./main.ts"
 
 function arraysAreEqual<T>(arr1?: T[], arr2?: T[]): boolean {
 	if (!arr1 || !arr2) {
@@ -62,7 +62,7 @@ function arraysAreEqual<T>(arr1?: T[], arr2?: T[]): boolean {
 function llSummaryIsEqual(ll1?: LazyLoadSummary, ll2?: LazyLoadSummary): boolean {
 	return ll1?.["m.joined_member_count"] === ll2?.["m.joined_member_count"] &&
 		ll1?.["m.invited_member_count"] === ll2?.["m.invited_member_count"] &&
-		arraysAreEqual(ll1?.heroes, ll2?.heroes)
+		arraysAreEqual(ll1?.["m.heroes"], ll2?.["m.heroes"])
 }
 
 function visibleMetaIsEqual(meta1: DBRoom, meta2: DBRoom): boolean {
@@ -126,6 +126,7 @@ export class RoomStateStore {
 	readUpToRow = -1
 	hasMoreHistory = true
 	hidden = false
+	roomListEntry: RoomListEntry | undefined | null
 
 	constructor(meta: DBRoom, private parent: StateStore) {
 		this.roomID = meta.room_id
@@ -390,7 +391,7 @@ export class RoomStateStore {
 		} else {
 			this.meta.emit(sync.meta)
 		}
-		for (const ad of Object.values(sync.account_data)) {
+		for (const ad of Object.values(sync.account_data ?? {})) {
 			if (ad.type === "fi.mau.gomuks.preferences") {
 				this.serverPreferenceCache = ad.content
 				this.preferenceSub.notify()
@@ -398,10 +399,10 @@ export class RoomStateStore {
 			this.accountData.set(ad.type, ad.content)
 			this.accountDataSubs.notify(ad.type)
 		}
-		for (const evt of sync.events) {
+		for (const evt of sync.events ?? []) {
 			this.applyEvent(evt)
 		}
-		for (const [evtType, changedEvts] of Object.entries(sync.state)) {
+		for (const [evtType, changedEvts] of Object.entries(sync.state ?? {})) {
 			let stateMap = this.state.get(evtType)
 			if (!stateMap) {
 				stateMap = new Map()
@@ -414,9 +415,9 @@ export class RoomStateStore {
 			this.stateSubs.notify(evtType)
 		}
 		if (sync.reset) {
-			this.timeline = sync.timeline
+			this.timeline = sync.timeline ?? []
 			this.pendingEvents.splice(0, this.pendingEvents.length)
-		} else {
+		} else if (sync.timeline) {
 			this.timeline.push(...sync.timeline)
 		}
 		if (sync.meta.unread_notifications === 0 && sync.meta.unread_highlights === 0) {
@@ -426,7 +427,7 @@ export class RoomStateStore {
 			this.openNotifications.clear()
 		}
 		this.notifyTimelineSubscribers()
-		for (const [evtID, receipts] of Object.entries(sync.receipts)) {
+		for (const [evtID, receipts] of Object.entries(sync.receipts ?? {})) {
 			this.applyReceipts(receipts, evtID, false)
 		}
 	}
