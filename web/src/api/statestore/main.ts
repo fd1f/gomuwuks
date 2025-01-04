@@ -39,7 +39,7 @@ import {
 } from "../types"
 import { InvitedRoomStore } from "./invitedroom.ts"
 import { RoomStateStore } from "./room.ts"
-import { DirectChatSpace, RoomListFilter, SpaceEdgeStore, SpaceOrphansSpace, UnreadsSpace } from "./space.ts"
+import { DirectChatSpace, RoomListFilter, Space, SpaceEdgeStore, SpaceOrphansSpace, UnreadsSpace } from "./space.ts"
 
 export interface RoomListEntry {
 	room_id: RoomID
@@ -128,6 +128,22 @@ export class StateStore {
 		return null
 	}
 
+	findMatchingSpace(room: RoomListEntry): Space | null {
+		if (this.spaceOrphans.include(room)) {
+			return this.spaceOrphans
+		}
+		for (const spaceID of this.topLevelSpaces.current) {
+			const space = this.spaceEdges.get(spaceID)
+			if (space?.include(room)) {
+				return space
+			}
+		}
+		if (this.directChatsSpace.include(room)) {
+			return this.directChatsSpace
+		}
+		return null
+	}
+
 	get roomListFilterFunc(): ((entry: RoomListEntry) => boolean) | null {
 		if (!this.currentRoomListFilter && !this.currentRoomListQuery) {
 			return null
@@ -187,8 +203,7 @@ export class StateStore {
 		const name = entry.meta.name ?? "Unnamed room"
 		return {
 			room_id: entry.meta.room_id,
-			dm_user_id: entry.meta.lazy_load_summary?.["m.heroes"]?.length === 1
-				? entry.meta.lazy_load_summary["m.heroes"][0] : undefined,
+			dm_user_id: entry.meta.dm_user_id,
 			sorting_timestamp: entry.meta.sorting_timestamp,
 			preview_event,
 			preview_sender,
@@ -537,6 +552,7 @@ export class StateStore {
 		this.rooms.clear()
 		this.inviteRooms.clear()
 		this.spaceEdges.clear()
+		this.pseudoSpaces.forEach(space => space.clearUnreads())
 		this.roomList.emit([])
 		this.topLevelSpaces.emit([])
 		this.accountData.clear()

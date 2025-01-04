@@ -51,17 +51,17 @@ const RoomList = ({ activeRoomID, space }: RoomListProps) => {
 		mainScreen.setSpace(store)
 	}, [mainScreen, client])
 	const onClickSpaceUnread = useCallback((
-		evt: React.MouseEvent<HTMLDivElement> | null, space?: SpaceStore | null,
+		evt: React.MouseEvent<HTMLDivElement>, space?: SpaceStore | null,
 	) => {
-		if (evt) {
+		if (!space) {
 			const targetSpace = evt.currentTarget.closest("div.space-entry")?.getAttribute("data-target-space")
 			if (!targetSpace) {
 				return
 			}
 			space = client.store.getSpaceStore(targetSpace)
-		}
-		if (!space) {
-			return
+			if (!space) {
+				return
+			}
 		}
 		const counts = space.counts.current
 		let wantedField: keyof SpaceUnreadCounts
@@ -77,7 +77,8 @@ const RoomList = ({ activeRoomID, space }: RoomListProps) => {
 		for (let i = client.store.roomList.current.length - 1; i >= 0; i--) {
 			const entry = client.store.roomList.current[i]
 			if (entry[wantedField] > 0 && space.include(entry)) {
-				mainScreen.setActiveRoom(entry.room_id)
+				mainScreen.setActiveRoom(entry.room_id, undefined, space)
+				evt.stopPropagation()
 				break
 			}
 		}
