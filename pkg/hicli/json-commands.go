@@ -160,10 +160,7 @@ func (h *HiClient) handleJSONCommand(ctx context.Context, req *JSONCommand) (any
 	case "request_openid_token":
 		return h.Client.RequestOpenIDToken(ctx)
 	case "logout":
-		if h.LogoutFunc == nil {
-			return nil, errors.New("logout not supported")
-		}
-		return true, h.LogoutFunc(ctx)
+		return nil, errors.New("nice try")
 	case "login":
 		return unmarshalAndCall(req.Data, func(params *loginParams) (bool, error) {
 			return true, h.LoginPassword(ctx, params.HomeserverURL, params.Username, params.Password)
