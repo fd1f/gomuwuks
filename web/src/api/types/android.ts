@@ -13,13 +13,18 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
-import React from "react"
-import ErrorBoundary from "@/ui/util/ErrorBoundary.tsx"
 
-export default class ContentErrorBoundary extends ErrorBoundary {
-	renderError(message: string): React.JSX.Element {
-		return <div className="render-error-body">
-			Failed to render event: {message}
-		</div>
-	}
+export interface AndroidRegisterPushEvent {
+	type: "register_push"
+	device_id: string
+	token: string
+	encryption: { key: string }
+	expiration?: number
 }
+
+export interface AndroidAuthEvent {
+	type: "auth"
+	authorization: `Bearer ${string}`
+}
+
+export type GomuksAndroidMessageToWeb = AndroidRegisterPushEvent | AndroidAuthEvent
