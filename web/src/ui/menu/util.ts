@@ -57,8 +57,9 @@ export function getModalStyleFromMouse(
 export function getModalStyleFromButton(button: HTMLElement, modalHeight: number): CSSProperties {
 	const rect = button.getBoundingClientRect()
 	const style: CSSProperties = { right: window.innerWidth - rect.right }
+	console.log(rect.bottom + modalHeight > window.innerHeight)
 	if (rect.bottom + modalHeight > window.innerHeight) {
-		style.bottom = window.innerHeight - rect.top
+		style.bottom = window.innerHeight - (rect.top - (rect.top - modalHeight))
 	} else {
 		style.top = rect.bottom
 	}
