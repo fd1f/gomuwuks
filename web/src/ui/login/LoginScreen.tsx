@@ -17,6 +17,7 @@ import React, { useCallback, useEffect, useState } from "react"
 import type Client from "@/api/client.ts"
 import type { ClientState } from "@/api/types"
 import BeeperLogin from "./BeeperLogin.tsx"
+import AccessTokenLogin from "./AccessTokenLogin.tsx"
 import "./LoginScreen.css"
 
 export interface LoginScreenProps {
@@ -164,5 +165,7 @@ export const LoginScreen = ({ client }: LoginScreenProps) => {
 			<hr/>
 			<BeeperLogin domain={beeperDomain} client={client}/>
 		</>}
+
+		<AccessTokenLogin client={client} homeserverURL={homeserverURL}/>
 	</main>
 }

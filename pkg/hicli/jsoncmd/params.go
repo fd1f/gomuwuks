@@ -159,6 +159,11 @@ type LoginCustomParams struct {
 	Request       *mautrix.ReqLogin `json:"request"`
 }
 
+type LoginAccessTokenParams struct {
+	HomeserverURL string `json:"homeserver_url"`
+	AccessToken   string `json:"access_token"`
+}
+
 type VerifyParams struct {
 	RecoveryKey string `json:"recovery_key"`
 }
