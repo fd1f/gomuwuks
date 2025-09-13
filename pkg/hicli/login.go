@@ -20,6 +20,42 @@ import (
 
 var InitialDeviceDisplayName = "mautrix hiclient"
 
+func (h *HiClient) LoginAccessToken(ctx context.Context, homeserverURL, accessToken string) error {
+	h.loginLock.Lock()
+	defer h.loginLock.Unlock()
+	if h.IsLoggedIn() {
+		return fmt.Errorf("already logged in")
+	}
+	parsedURL, err := url.Parse(homeserverURL)
+	if err != nil {
+		return err
+	}
+	h.Client.HomeserverURL = parsedURL
+	err = h.CheckServerVersions(ctx)
+	if err != nil {
+		return err
+	}
+	h.Client.AccessToken = accessToken
+	whoami, err := h.Client.Whoami(ctx)
+	if err != nil {
+		return err
+	}
+	defer h.dispatchCurrentState()
+	h.Account = &database.Account{
+		UserID:        whoami.UserID,
+		DeviceID:      whoami.DeviceID,
+		AccessToken:   h.Client.AccessToken,
+		HomeserverURL: h.Client.HomeserverURL.String(),
+	}
+	log := zerolog.Ctx(ctx)
+	log.Debug().Msg("Saving account to database after login")
+	err = h.DB.Account.Put(ctx, h.Account)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (h *HiClient) LoginPassword(ctx context.Context, homeserverURL, username, password string) error {
 	var err error
 	h.Client.HomeserverURL, err = url.Parse(homeserverURL)

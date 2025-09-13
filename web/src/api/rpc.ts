@@ -362,6 +362,10 @@ export default abstract class RPCClient {
 		return this.request("login_custom", { homeserver_url, request })
 	}
 
+	loginAccessToken(homeserver_url: string, access_token: string): Promise<boolean> {
+		return this.request("login_access_token", { homeserver_url, access_token })
+	}
+
 	verify(recovery_key: string): Promise<boolean> {
 		return this.request("verify", { recovery_key })
 	}
