@@ -85,7 +85,7 @@ function App() {
 		</div>
 	} else if (!clientState.is_logged_in) {
 		return <div className="pre-main"><LoginScreen client={client} clientState={clientState}/></div>
-	else {
+	} else {
 		return <ClientContext value={client}>
 			<LightboxWrapper>
 				<MainScreen/>
