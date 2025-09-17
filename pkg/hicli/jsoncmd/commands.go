@@ -58,6 +58,7 @@ const (
 	ReqLogout                   Name = "logout"
 	ReqLogin                    Name = "login"
 	ReqLoginCustom              Name = "login_custom"
+	ReqLoginAccessToken         Name = "login_access_token"
 	ReqVerify                   Name = "verify"
 	ReqDiscoverHomeserver       Name = "discover_homeserver"
 	ReqGetLoginFlows            Name = "get_login_flows"

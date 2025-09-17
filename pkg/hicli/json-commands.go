@@ -264,6 +264,15 @@ func (h *HiClient) handleJSONCommand(ctx context.Context, req *JSONCommand) (any
 			}
 			return true, err
 		})
+	case jsoncmd.ReqLoginAccessToken:
+		return unmarshalAndCall(req.Data, func(params *jsoncmd.LoginAccessTokenParams) (bool, error) {
+			var err error
+			err = h.LoginAccessToken(ctx, params.HomeserverURL, params.AccessToken)
+			if err != nil {
+				h.Log.Err(err).Msg("Failed to login")
+			}
+			return true, err
+		})
 	case jsoncmd.ReqVerify:
 		return unmarshalAndCall(req.Data, func(params *jsoncmd.VerifyParams) (bool, error) {
 			return true, h.Verify(ctx, params.RecoveryKey)
