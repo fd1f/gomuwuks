@@ -202,6 +202,7 @@ func (h *HiClient) Start(ctx context.Context, userID id.UserID, expectedAccount 
 		h.Client.DeviceID = account.DeviceID
 		h.Client.AccessToken = account.AccessToken
 		h.Client.HomeserverURL, err = url.Parse(account.HomeserverURL)
+		skipCrypto := true
 		if err != nil {
 			return err
 		}
@@ -210,21 +211,24 @@ func (h *HiClient) Start(ctx context.Context, userID id.UserID, expectedAccount 
 			return err
 		}
 		err = h.Crypto.Load(ctx)
-		if err != nil {
+		if err != nil && !skipCrypto {
 			return fmt.Errorf("failed to load olm machine: %w", err)
 		}
 
 		h.Verified, err = h.checkIsCurrentDeviceVerified(ctx)
-		if err != nil {
+		if err != nil && !skipCrypto {
 			return err
 		}
 		zerolog.Ctx(ctx).Debug().Bool("verified", h.Verified).Msg("Checked current device verification status")
-		if h.Verified {
+		if h.Verified && !skipCrypto {
 			err = h.loadPrivateKeys(ctx)
 			if err != nil {
 				return err
 			}
 			go h.Sync()
+		} else {
+			go h.Sync()
+			h.dispatchCurrentState()
 		}
 	}
 	return nil
