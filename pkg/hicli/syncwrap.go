@@ -13,6 +13,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"maunium.net/go/mautrix"
+	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 
 	"go.mau.fi/gomuks/pkg/hicli/database"
@@ -79,16 +80,9 @@ func (h *hiSyncer) OnFailedSync(_ *mautrix.RespSync, err error) (time.Duration, 
 }
 
 func (h *hiSyncer) GetFilterJSON(_ id.UserID) *mautrix.Filter {
-	if !!h.Verified {
-		return &mautrix.Filter{
-			Presence: &mautrix.FilterPart{
-				NotRooms: []id.RoomID{"*"},
-			},
-			Room: &mautrix.RoomFilter{
-				NotRooms: []id.RoomID{"*"},
-			},
-		}
-	}
+	// note: the official client also excludes com.reddit.review_open and
+	// com.reddit.review_close timeline events, but i don't like that.
+	// also, unread_thread_notifications is true.
 	return &mautrix.Filter{
 		Presence: &mautrix.FilterPart{
 			NotRooms: []id.RoomID{"*"},
@@ -100,6 +94,13 @@ func (h *hiSyncer) GetFilterJSON(_ id.UserID) *mautrix.Filter {
 			Timeline: &mautrix.FilterPart{
 				Limit:           100,
 				LazyLoadMembers: true,
+				NotAggregatedRelations: []event.RelationType{
+					event.RelAnnotation,
+					"com.reddit.hide_user_content",
+					"com.reddit.potentially_toxic",
+					"com.reddit.display_settings",
+					"com.reddit.review_request",
+				},
 			},
 		},
 	}
