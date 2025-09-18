@@ -23,7 +23,7 @@ import WasmClient from "./api/wasmclient.ts"
 import WSClient from "./api/wsclient.ts"
 import ClientContext from "./ui/ClientContext.ts"
 import MainScreen from "./ui/MainScreen.tsx"
-import { LoginScreen, VerificationScreen } from "./ui/login"
+import { LoginScreen } from "./ui/login"
 import { LightboxWrapper } from "./ui/modal"
 import { useEventAsState } from "./util/eventdispatcher.ts"
 
