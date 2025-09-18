@@ -68,6 +68,16 @@ var ErrBadGateway = mautrix.RespError{
 	StatusCode: http.StatusBadGateway,
 }
 
+// copied from Client.Donwload(), except it uses deprecated endpoints
+func oldMediaDownload(ctx context.Context, cli *mautrix.Client, mxcURL id.ContentURI) (*http.Response, error) {
+	_, resp, err := cli.MakeFullRequestWithResp(ctx, mautrix.FullRequest{
+		Method:           http.MethodGet,
+		URL:              cli.BuildURL(mautrix.MediaURLPath{"v3", "download", mxcURL.Homeserver, mxcURL.FileID}),
+		DontReadResponse: true,
+	})
+	return resp, err
+}
+
 func (gmx *Gomuks) downloadMediaFromCache(ctx context.Context, w http.ResponseWriter, r *http.Request, entry *database.Media, force, useThumbnail bool) bool {
 	if !entry.UseCache() {
 		if force {
@@ -414,7 +424,7 @@ func (gmx *Gomuks) DownloadMedia(w http.ResponseWriter, r *http.Request) {
 		cacheEntry.Error.Write(w)
 	}
 
-	resp, err := gmx.Client.Client.Download(mautrix.WithMaxRetries(ctx, 0), mxc)
+	resp, err := oldMediaDownload(mautrix.WithMaxRetries(ctx, 0), gmx.Client.Client, mxc)
 	if err != nil {
 		if ctx.Err() != nil {
 			w.WriteHeader(499)
