@@ -63,7 +63,7 @@ export class RoomContextData {
 			return
 		}
 		const targetUserName = evt.currentTarget.innerText
-		this.insertText(makeMentionMarkdown(targetUserName, targetUser))
+		this.insertText(targetUser.endsWith(":reddit.com") ? `@${targetUserName} ` : makeMentionMarkdown(targetUserName, targetUser))
 	}
 }
 

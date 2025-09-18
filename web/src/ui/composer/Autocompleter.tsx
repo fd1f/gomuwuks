@@ -192,8 +192,10 @@ export const EmojiAutocompleter = ({ params, room, ...rest }: AutocompleterProps
 }
 
 const userFuncs = {
-	getText: (user: AutocompleteMemberEntry, state: ComposerState) => state.command
-		? user.userID : makeMentionMarkdown(user.displayName, user.userID),
+	getText: (user: AutocompleteMemberEntry, state: ComposerState) => {
+		const redditor = user.userID.endsWith(":reddit.com")
+		return state.command ? user.userID : (redditor ? `@${user.displayName} ` : makeMentionMarkdown(user.displayName, user.userID))
+	},
 	getKey: (user: AutocompleteMemberEntry) => user.userID,
 	render: (user: AutocompleteMemberEntry) => <>
 		<img
